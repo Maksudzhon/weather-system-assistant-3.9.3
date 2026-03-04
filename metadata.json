@@ -1,0 +1,5 @@
+{
+  "name": "WSA v3.9.1 - Global Weather Hub",
+  "description": "Advanced Weather System App with Weather Quest, Global Insights, Currency, World Clock, and Flight Information.",
+  "requestFramePermissions": ["geolocation"]
+}
