@@ -122,6 +122,10 @@ const resources = {
       "pwa_android_steps": "1. Chrome brauzerida oching. 2. 'Add to Home screen' tugmasini bosing.",
       "pwa_ios_steps": "1. Safari brauzerida oching. 2. 'Share' tugmasini bosing. 3. 'Add to Home Screen' ni tanlang.",
       "install_now": "Hozir o'rnatish",
+      "notification_instruction": "Bildirishnoma kelishi uchun telefoningiz sozlamalaridan brauzerga xabar jo'natishga ruxsat bering.",
+      "author": "Muallif",
+      "admin": "Admin",
+      "info_page": "Ma'lumotnoma",
       "mon": "Dushanba", "tue": "Seshanba", "wed": "Chorshanba", "thu": "Payshanba", "fri": "Juma", "sat": "Shanba", "sun": "Yakshanba",
       "jan": "Yanvar", "feb": "Fevral", "mar": "Mart", "apr": "Aprel", "may": "May", "jun": "Iyun", "jul": "Iyul", "aug": "Avgust", "sep": "Sentabr", "oct": "Oktabr", "nov": "Noyabr", "dec": "Dekabr"
     }
@@ -246,6 +250,10 @@ const resources = {
       "pwa_android_steps": "1. Откройте в Chrome. 2. Нажмите 'Добавить на главный экран'.",
       "pwa_ios_steps": "1. Откройте в Safari. 2. Нажмите 'Поделиться'. 3. Выберите 'На экран Домой'.",
       "install_now": "Установить сейчас",
+      "notification_instruction": "Чтобы получать уведомления, разрешите браузеру отправлять сообщения в настройках вашего телефона.",
+      "author": "Автор",
+      "admin": "Админ",
+      "info_page": "Справочник",
       "mon": "Понедельник", "tue": "Вторник", "wed": "Среда", "thu": "Четверг", "fri": "Пятница", "sat": "Суббота", "sun": "Воскресенье",
       "jan": "Январь", "feb": "Февраль", "mar": "Март", "apr": "Апрель", "may": "Май", "jun": "Июнь", "jul": "Июль", "aug": "Август", "sep": "Сентябрь", "oct": "Октябрь", "nov": "Ноябрь", "dec": "Декабрь"
     }
@@ -370,6 +378,10 @@ const resources = {
       "pwa_android_steps": "1. Open in Chrome. 2. Tap 'Add to Home screen'.",
       "pwa_ios_steps": "1. Open in Safari. 2. Tap 'Share'. 3. Select 'Add to Home Screen'.",
       "install_now": "Install Now",
+      "notification_instruction": "To receive notifications, please allow the browser to send messages in your phone settings.",
+      "author": "Author",
+      "admin": "Admin",
+      "info_page": "Information",
       "mon": "Monday", "tue": "Tuesday", "wed": "Wednesday", "thu": "Thursday", "fri": "Friday", "sat": "Saturday", "sun": "Sunday",
       "jan": "January", "feb": "February", "mar": "March", "apr": "April", "may": "May", "jun": "June", "jul": "July", "aug": "August", "sep": "September", "oct": "October", "nov": "November", "dec": "December"
     }

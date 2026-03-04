@@ -115,6 +115,125 @@ const WORLD_CITIES = [
   { name: 'Dubai', tz: 'Asia/Dubai' }
 ];
 
+const STATIC_CITY_DATA: Record<string, Record<string, CityInsight>> = {
+  'tashkent': {
+    uz: {
+      name: 'Toshkent',
+      description: 'O\'zbekistonning poytaxti va eng yirik shahri. Markaziy Osiyoning madaniy va iqtisodiy markazi.',
+      work: 'IT, moliya, qurilish va xizmat ko\'rsatish sohalarida keng imkoniyatlar.',
+      study: 'O\'zbekiston Milliy Universiteti, Toshkent Davlat Texnika Universiteti va ko\'plab xalqaro universitetlar.',
+      live: 'Zamonaviy infratuzilma, arzon yashash xarajatlari va mehmondo\'st xalq.',
+      travel: 'Chorsu bozori, Hazrati Imom majmuasi, Toshkent metrosi va Teleminora.',
+      fact: 'Toshkent metrosi Markaziy Osiyodagi birinchi metro hisoblanadi.',
+      images: ['tashkent', 'uzbekistan', 'city'],
+      cuisine: [
+        { name: 'Palov', description: 'O\'zbek oshxonasining shohi.' },
+        { name: 'Somsa', description: 'Tandirda pishirilgan mazali xamir ovqat.' },
+        { name: 'Norin', description: 'Yupqa kesilgan xamir va go\'shtli an\'anaviy taom.' }
+      ],
+      safety: 'Shahar juda xavfsiz, ayniqsa sayyohlar uchun. Kechki sayrlar bexatar.',
+      packing: ['Quyosh ko\'zoynagi', 'Yengil kiyim', 'Qulay poyabzal', 'Powerbank', 'Shaxsiy gigiyena vositalari'],
+      activities: ["Eski shaharni aylanish", "Metroda sayohat qilish", "Milliy taomlarni tatib ko'rish"]
+    },
+    ru: {
+      name: 'Ташкент',
+      description: 'Столица и крупнейший город Узбекистана. Культурный и экономический центр Центральной Азии.',
+      work: 'Широкие возможности в сферах IT, финансов, строительства и услуг.',
+      study: 'Национальный университет Узбекистана, Ташкентский государственный технический университет и многие международные вузы.',
+      live: 'Современная инфраструктура, низкая стоимость жизни и гостеприимный народ.',
+      travel: 'Базар Чорсу, комплекс Хазрати Имам, Ташкентское метро и Телебашня.',
+      fact: 'Ташкентское метро — первое метро в Центральной Азии.',
+      images: ['tashkent', 'uzbekistan', 'city'],
+      cuisine: [
+        { name: 'Плов', description: 'Король узбекской кухни.' },
+        { name: 'Самса', description: 'Вкусная выпечка, приготовленная в тандыре.' },
+        { name: 'Нарын', description: 'Традиционное блюдо из тонко нарезанного теста и мяса.' }
+      ],
+      safety: 'Город очень безопасен, особенно для туристов. Ночные прогулки безопасны.',
+      packing: ['Солнцезащитные очки', 'Легкая одежда', 'Удобная обувь', 'Пауэрбанк', 'Средства личной гигиены'],
+      activities: ['Прогулка по старому городу', 'Поездка на метро', 'Дегустация национальных блюд']
+    },
+    en: {
+      name: 'Tashkent',
+      description: 'The capital and largest city of Uzbekistan. The cultural and economic center of Central Asia.',
+      work: 'Wide opportunities in IT, finance, construction, and services.',
+      study: 'National University of Uzbekistan, Tashkent State Technical University, and many international universities.',
+      live: 'Modern infrastructure, low cost of living, and hospitable people.',
+      travel: 'Chorsu Bazaar, Hast Imam Complex, Tashkent Metro, and TV Tower.',
+      fact: 'The Tashkent Metro was the first metro in Central Asia.',
+      images: ['tashkent', 'uzbekistan', 'city'],
+      cuisine: [
+        { name: 'Plov', description: 'The king of Uzbek cuisine.' },
+        { name: 'Samsa', description: 'Delicious pastry cooked in a tandoor.' },
+        { name: 'Norin', description: 'Traditional dish of thinly sliced dough and meat.' }
+      ],
+      safety: 'The city is very safe, especially for tourists. Night walks are safe.',
+      packing: ['Sunglasses', 'Light clothing', 'Comfortable shoes', 'Powerbank', 'Personal hygiene items'],
+      activities: ['Explore the Old City', 'Ride the Metro', 'Taste national dishes']
+    }
+  },
+  'london': {
+    uz: {
+      name: 'London',
+      description: 'Buyuk Britaniya poytaxti, tarixiy va zamonaviy shahar.',
+      work: 'Moliya, texnologiya va san\'at sohalarida global markaz.',
+      study: 'London Iqtisodiyot Maktabi, Imperial Kolleji va boshqalar.',
+      live: 'Yuqori hayot darajasi, ko\'p madaniyatli muhit.',
+      travel: 'Big Ben, London ko\'zi, Bukingem saroyi.',
+      fact: 'London metrosi dunyodagi eng qadimgi metrodir.',
+      images: ['london', 'uk', 'bigben'],
+      cuisine: [{ name: 'Fish and Chips', description: 'Mashhur baliq va kartoshka.' }],
+      safety: 'Umuman xavfsiz, lekin gavjum joylarda ehtiyot bo\'ling.',
+      packing: ['Soyabon', 'Issiq kiyim', 'Qulay poyabzal'],
+      activities: ['Muzeylarni ko\'rish', 'Temza bo\'yida sayr', 'Teatrga borish']
+    },
+    en: {
+      name: 'London',
+      description: 'The capital of the UK, a historic and modern city.',
+      work: 'Global hub for finance, tech, and arts.',
+      study: 'LSE, Imperial College, and many more.',
+      live: 'High standard of living, multicultural environment.',
+      travel: 'Big Ben, London Eye, Buckingham Palace.',
+      fact: 'The London Underground is the oldest in the world.',
+      images: ['london', 'uk', 'bigben'],
+      cuisine: [{ name: 'Fish and Chips', description: 'Famous fish and chips.' }],
+      safety: 'Generally safe, but be careful in crowded areas.',
+      packing: ['Umbrella', 'Warm clothes', 'Comfortable shoes'],
+      activities: ['Visit museums', 'Walk along the Thames', 'Go to a theater']
+    }
+  },
+  'moscow': {
+    uz: {
+      name: 'Moskva',
+      description: 'Rossiya poytaxti, ulkan va dinamik megapolis.',
+      work: 'Rossiyaning iqtisodiy va siyosiy markazi.',
+      study: 'MDU, Bauman universiteti va boshqalar.',
+      live: 'Boy madaniy hayot, rivojlangan transport.',
+      travel: 'Qizil maydon, Kreml, Bolshoy teatr.',
+      fact: 'Moskva metrosi dunyodagi eng chiroyli metrolardan biridir.',
+      images: ['moscow', 'russia', 'kremlin'],
+      cuisine: [{ name: 'Borщ', description: 'An\'anaviy sho\'rva.' }],
+      safety: 'Xavfsizlik choralari yuqori darajada.',
+      packing: ['Issiq kiyim', 'Xarita', 'Qulay poyabzal'],
+      activities: ['Qizil maydonda sayr', 'Metroni ko\'rish', 'Parklarda dam olish']
+    },
+    en: {
+      name: 'Moscow',
+      description: 'The capital of Russia, a vast and dynamic megapolis.',
+      work: 'Economic and political center of Russia.',
+      study: 'MSU, Bauman University, and others.',
+      live: 'Rich cultural life, developed transport.',
+      travel: 'Red Square, Kremlin, Bolshoi Theatre.',
+      fact: 'The Moscow Metro is one of the most beautiful in the world.',
+      images: ['moscow', 'russia', 'kremlin'],
+      cuisine: [{ name: 'Borscht', description: 'Traditional soup.' }],
+      safety: 'Security measures are at a high level.',
+      packing: ['Warm clothes', 'Map', 'Comfortable shoes'],
+      activities: ['Walk on Red Square', 'See the Metro', 'Relax in parks']
+    }
+  }
+};
+
 // --- Main Component ---
 export default function App() {
   const { t, i18n } = useTranslation();
@@ -277,6 +396,13 @@ export default function App() {
     setLoading(true);
     setApiError(null);
     
+    const cityLower = city.toLowerCase();
+    if (STATIC_CITY_DATA[cityLower]) {
+      setInsight(STATIC_CITY_DATA[cityLower][i18n.language] || STATIC_CITY_DATA[cityLower]['en']);
+      setLoading(false);
+      return;
+    }
+
     // Simple Cache Check
     const cacheKey = `insight_${city.toLowerCase()}_${i18n.language}`;
     const cached = localStorage.getItem(cacheKey);
@@ -715,7 +841,7 @@ export default function App() {
               )}
             >
               <Info className="w-5 h-5" />
-              {t('instructions')}
+              {t('info_page')}
             </button>
             <div className="flex items-center gap-2 mb-4">
               <Languages className="w-4 h-4 text-slate-400" />
@@ -1200,24 +1326,30 @@ export default function App() {
             {activeTab === 'notifications' && (
               <div className="max-w-2xl mx-auto">
                 <div className={cn(
-                  "p-10 rounded-[40px] border shadow-xl transition-all",
+                  "p-6 md:p-10 rounded-[32px] md:rounded-[40px] border shadow-xl transition-all",
                   isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"
                 )}>
                   <div className="flex items-center gap-3 mb-8">
                     <Bell className="w-8 h-8 text-indigo-600" />
-                    <h3 className="text-3xl font-black">{t('notifications')}</h3>
+                    <h3 className="text-2xl md:text-3xl font-black">{t('notifications')}</h3>
                   </div>
                   
                   <div className="space-y-6">
+                    <div className="p-4 bg-indigo-50 border border-indigo-100 rounded-2xl">
+                      <p className="text-sm text-indigo-700 font-medium text-center">
+                        {t('notification_instruction')}
+                      </p>
+                    </div>
+
                     <div className="flex items-center justify-between p-6 bg-slate-50 dark:bg-slate-800 rounded-3xl">
-                      <div>
+                      <div className="flex-1 pr-4">
                         <h4 className="font-bold text-lg">{t('enable_notifications')}</h4>
                         <p className="text-sm text-slate-500">{t('bot_desc')}</p>
                       </div>
                       <button 
                         onClick={toggleNotifications}
                         className={cn(
-                          "w-14 h-7 rounded-full relative transition-colors",
+                          "w-14 h-7 rounded-full relative transition-colors shrink-0",
                           isNotificationsEnabled ? "bg-emerald-500" : "bg-slate-300"
                         )}
                       >
@@ -1254,13 +1386,15 @@ export default function App() {
                         {t('test_notification')}
                       </button>
                       
-                      {['Rain', 'Wind', 'Hail', 'Heat', 'Earthquake'].map(type => (
-                        <div key={type} className="flex items-center gap-4 p-4 border border-slate-100 dark:border-slate-800 rounded-2xl opacity-60">
-                          <AlertCircle className="w-5 h-5 text-indigo-600" />
-                          <span className="font-bold">{type} {t('upcoming')}</span>
-                          <span className="ml-auto text-xs font-bold text-slate-400 uppercase">{t('upcoming')}</span>
-                        </div>
-                      ))}
+                      <div className="grid grid-cols-1 gap-3">
+                        {['Rain', 'Wind', 'Hail', 'Heat', 'Earthquake'].map(type => (
+                          <div key={type} className="flex items-center gap-4 p-4 border border-slate-100 dark:border-slate-800 rounded-2xl opacity-60">
+                            <AlertCircle className="w-5 h-5 text-indigo-600" />
+                            <span className="font-bold text-sm md:text-base">{type} {t('upcoming')}</span>
+                            <span className="ml-auto text-[10px] font-bold text-slate-400 uppercase">{t('upcoming')}</span>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1322,7 +1456,7 @@ export default function App() {
 
             {/* Info View */}
             {activeTab === 'info' && (
-              <div className="max-w-5xl mx-auto">
+              <div className="max-w-5xl mx-auto pb-20">
                 <div className={cn(
                   "p-8 lg:p-12 rounded-[40px] border transition-colors",
                   isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"
@@ -1331,7 +1465,7 @@ export default function App() {
                     "text-3xl lg:text-4xl font-black text-center mb-12",
                     isDarkMode ? "text-white" : "text-slate-900"
                   )}>
-                    {t('instructions')}
+                    {t('info_page')}
                   </h2>
 
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
@@ -1358,6 +1492,14 @@ export default function App() {
                         <div>
                           <h4 className={cn("text-lg font-bold mb-2", isDarkMode ? "text-white" : "text-slate-900")}>{t('install_steps')}</h4>
                           <p className="text-slate-500 font-medium leading-relaxed">{t('install_hint')}</p>
+                        </div>
+                      </div>
+
+                      <div className="flex gap-6">
+                        <div className="w-10 h-10 shrink-0 bg-emerald-600 rounded-xl flex items-center justify-center text-white font-bold">4</div>
+                        <div>
+                          <h4 className={cn("text-lg font-bold mb-2", isDarkMode ? "text-white" : "text-slate-900")}>{t('notifications')}</h4>
+                          <p className="text-slate-500 font-medium leading-relaxed">{t('notification_instruction')}</p>
                         </div>
                       </div>
                     </div>
@@ -1656,23 +1798,43 @@ export default function App() {
 
       {/* Footer */}
       <footer className={cn(
-        "fixed bottom-0 right-0 bg-white/80 backdrop-blur-md border-t border-slate-200 py-4 px-8 hidden lg:block z-30 transition-all",
+        "fixed bottom-0 left-0 right-0 bg-white/80 backdrop-blur-md border-t border-slate-200 py-4 px-4 md:px-8 z-30 transition-all",
         "lg:left-72",
         isDarkMode ? "bg-slate-900/80 border-slate-800" : "bg-white/80 border-slate-200"
       )}>
-        <div className="max-w-7xl mx-auto flex justify-between items-center">
-          <button 
-            onClick={handleVersionClick}
-            className="text-slate-500 text-xs font-bold uppercase tracking-widest hover:text-indigo-600 transition-colors"
-          >
-            {t('footer_text')}
-          </button>
+        <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
+          <div className="flex items-center gap-4">
+            <button 
+              onClick={handleVersionClick}
+              className="text-slate-500 text-[10px] md:text-xs font-bold uppercase tracking-widest hover:text-indigo-600 transition-colors"
+            >
+              {t('footer_text')}
+            </button>
+            <div className="flex gap-4">
+              <a 
+                href="https://t.me/morv1uss" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="text-[10px] md:text-xs font-bold text-indigo-600 hover:underline"
+              >
+                {t('author')}
+              </a>
+              <a 
+                href="https://t.me/Eshkhuvvatofff" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="text-[10px] md:text-xs font-bold text-slate-500 hover:underline"
+              >
+                {t('admin')}
+              </a>
+            </div>
+          </div>
           <div className="flex items-center gap-6">
-            <span className="flex items-center gap-2 text-xs font-bold text-emerald-600">
+            <span className="flex items-center gap-2 text-[10px] md:text-xs font-bold text-emerald-600">
               <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
               {t('real_time')}
             </span>
-            <span className="text-slate-300">|</span>
+            <span className="text-slate-300 hidden md:block">|</span>
             <div className="flex gap-4">
               <Github className="w-4 h-4 text-slate-400 hover:text-indigo-600 cursor-pointer" />
               <Twitter className="w-4 h-4 text-slate-400 hover:text-indigo-600 cursor-pointer" />
