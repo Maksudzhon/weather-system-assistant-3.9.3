@@ -227,9 +227,159 @@ const STATIC_CITY_DATA: Record<string, Record<string, CityInsight>> = {
       fact: 'The Moscow Metro is one of the most beautiful in the world.',
       images: ['moscow', 'russia', 'kremlin'],
       cuisine: [{ name: 'Borscht', description: 'Traditional soup.' }],
-      safety: 'Security measures are at a high level.',
+      safety: 'Security measures are at a level of high standard.',
       packing: ['Warm clothes', 'Map', 'Comfortable shoes'],
       activities: ['Walk on Red Square', 'See the Metro', 'Relax in parks']
+    }
+  },
+  'new york': {
+    uz: {
+      name: 'Nyu-York',
+      description: 'AQSHning eng yirik shahri, dunyo moliya va madaniyat markazi.',
+      work: 'Uoll-strit, texnologiya va media sohalarida cheksiz imkoniyatlar.',
+      study: 'Kolumbiya universiteti, NYU va boshqalar.',
+      live: 'Tezkor hayot tarzi, "hech qachon uxlamaydigan shahar".',
+      travel: 'Tayms-skver, Ozodlik haykali, Markaziy park.',
+      fact: 'Nyu-Yorkda 800 dan ortiq tillarda gaplashiladi.',
+      images: ['newyork', 'manhattan', 'skyline'],
+      cuisine: [{ name: 'New York Pizza', description: 'Yupqa va mazali pitsa.' }],
+      safety: 'Gavjum joylarda ehtiyot bo\'ling, shahar umuman xavfsiz.',
+      packing: ['Qulay poyabzal', 'Kamera', 'Powerbank'],
+      activities: ['Tayms-skverda sayr', 'Brodvey shousi', 'Muzeylar']
+    },
+    en: {
+      name: 'New York',
+      description: 'The largest city in the US, a global center for finance and culture.',
+      work: 'Wall Street, tech, and media opportunities.',
+      study: 'Columbia University, NYU, and more.',
+      live: 'Fast-paced lifestyle, "the city that never sleeps".',
+      travel: 'Times Square, Statue of Liberty, Central Park.',
+      fact: 'Over 800 languages are spoken in New York City.',
+      images: ['newyork', 'manhattan', 'skyline'],
+      cuisine: [{ name: 'New York Pizza', description: 'Thin and delicious pizza.' }],
+      safety: 'Be careful in crowded areas, the city is generally safe.',
+      packing: ['Comfortable shoes', 'Camera', 'Powerbank'],
+      activities: ['Walk in Times Square', 'Broadway show', 'Museums']
+    }
+  },
+  'tokyo': {
+    uz: {
+      name: 'Tokio',
+      description: 'Yaponiya poytaxti, texnologiya va an\'analar uyg\'unligi.',
+      work: 'Yuqori texnologiyalar, robototexnika va moliya.',
+      study: 'Tokio universiteti, Vaseda universiteti.',
+      live: 'Tartibli hayot, juda xavfsiz va toza shahar.',
+      travel: 'Sibuya chorrahasi, Tokio minorasi, Senso-ji ibodatxonasi.',
+      fact: 'Tokio dunyodagi eng ko\'p aholiga ega megapolisdir.',
+      images: ['tokyo', 'japan', 'shibuya'],
+      cuisine: [{ name: 'Sushi', description: 'Yaponiyaning ramziy taomi.' }],
+      safety: 'Dunyodagi eng xavfsiz shaharlardan biri.',
+      packing: ['Yurish uchun poyabzal', 'Yapon tili lug\'ati', 'Yengil kiyim'],
+      activities: ['Sibuya chorrahasi', 'Ibodatxonalar', 'Elektronika do'konlari']
+    },
+    en: {
+      name: 'Tokyo',
+      description: 'The capital of Japan, a blend of technology and tradition.',
+      work: 'High tech, robotics, and finance.',
+      study: 'University of Tokyo, Waseda University.',
+      live: 'Orderly life, very safe and clean city.',
+      travel: 'Shibuya Crossing, Tokyo Tower, Senso-ji Temple.',
+      fact: 'Tokyo is the most populous metropolitan area in the world.',
+      images: ['tokyo', 'japan', 'shibuya'],
+      cuisine: [{ name: 'Sushi', description: 'Iconic Japanese dish.' }],
+      safety: 'One of the safest cities in the world.',
+      packing: ['Walking shoes', 'Japanese phrasebook', 'Light clothing'],
+      activities: ['Shibuya Crossing', 'Temples', 'Electronics stores']
+    }
+  },
+  'dubai': {
+    uz: {
+      name: 'Dubay',
+      description: 'BAAning eng mashhur shahri, hashamat va kelajak shahri.',
+      work: 'Turizm, ko\'chmas mulk va xalqaro savdo.',
+      study: 'Dubay Amerika universiteti, xalqaro filiallar.',
+      live: 'Yuqori darajadagi xizmatlar, soliqsiz daromad.',
+      travel: 'Burj Xalifa, Dubay Mall, Palm Jumeirah.',
+      fact: 'Dubayda politsiya xodimlari superkarlardan foydalanishadi.',
+      images: ['dubai', 'burjkhalifa', 'desert'],
+      cuisine: [{ name: 'Shawarma', description: 'Mashhur arab taomi.' }],
+      safety: 'Dunyodagi eng xavfsiz shaharlardan biri.',
+      packing: ['Quyoshdan himoya kremi', 'Yengil kiyim', 'Quyosh ko\'zoynagi'],
+      activities: ['Burj Xalifaga chiqish', 'Cho\'l safari', 'Sohil dam olishi']
+    },
+    en: {
+      name: 'Dubai',
+      description: 'The most famous city in the UAE, a city of luxury and the future.',
+      work: 'Tourism, real estate, and international trade.',
+      study: 'American University in Dubai, international branches.',
+      live: 'High-end services, tax-free income.',
+      travel: 'Burj Khalifa, Dubai Mall, Palm Jumeirah.',
+      fact: 'Police officers in Dubai use supercars.',
+      images: ['dubai', 'burjkhalifa', 'desert'],
+      cuisine: [{ name: 'Shawarma', description: 'Famous Arabic dish.' }],
+      safety: 'One of the safest cities in the world.',
+      packing: ['Sunscreen', 'Light clothing', 'Sunglasses'],
+      activities: ['Visit Burj Khalifa', 'Desert safari', 'Beach relaxation']
+    }
+  },
+  'paris': {
+    uz: {
+      name: 'Parij',
+      description: 'Fransiya poytaxti, sevgi va san\'at shahri.',
+      work: 'Moda, dizayn va turizm sohalarida yetakchi.',
+      study: 'Sorbonna universiteti, san\'at akademiyalari.',
+      live: 'Boy madaniyat, tarixiy binolar va romantik muhit.',
+      travel: 'Eyfel minorasi, Luvr muzeyi, Notr-Dam.',
+      fact: 'Luvr muzeyini to\'liq ko\'rish uchun bir necha oy kerak bo\'ladi.',
+      images: ['paris', 'eiffel', 'louvre'],
+      cuisine: [{ name: 'Croissant', description: 'Mashhur fransuz nonushtasi.' }],
+      safety: 'Sayyohlar gavjum joylarda cho'ntakkesarlardan ehtiyot bo'ling.',
+      packing: ['Zamonaviy kiyim', 'Kamera', 'Qulay poyabzal'],
+      activities: ['Eyfel minorasi', 'Sena daryosida sayr', 'Muzeylar']
+    },
+    en: {
+      name: 'Paris',
+      description: 'The capital of France, the city of love and art.',
+      work: 'Leader in fashion, design, and tourism.',
+      study: 'Sorbonne University, art academies.',
+      live: 'Rich culture, historic buildings, and romantic atmosphere.',
+      travel: 'Eiffel Tower, Louvre Museum, Notre-Dame.',
+      fact: 'It would take months to see everything in the Louvre Museum.',
+      images: ['paris', 'eiffel', 'louvre'],
+      cuisine: [{ name: 'Croissant', description: 'Famous French breakfast.' }],
+      safety: 'Be careful of pickpockets in crowded tourist areas.',
+      packing: ['Stylish clothes', 'Camera', 'Comfortable shoes'],
+      activities: ['Eiffel Tower', 'Seine river cruise', 'Museums']
+    }
+  },
+  'berlin': {
+    uz: {
+      name: 'Berlin',
+      description: 'Germaniya poytaxti, tarix va zamonaviylik markazi.',
+      work: 'Texnologiya, startaplar va muhandislik.',
+      study: 'Gumboldt universiteti, Berlin Texnika universiteti.',
+      live: 'Erkin muhit, yashil parklar va rivojlangan transport.',
+      travel: 'Brandenburg darvozasi, Reyxstag, Berlin devori.',
+      fact: 'Berlinda Venetsiyadan ko\'ra ko\'proq ko\'priklar bor.',
+      images: ['berlin', 'germany', 'brandenburg'],
+      cuisine: [{ name: 'Currywurst', description: 'Mashhur nemis sosiskasi.' }],
+      safety: 'Shahar juda xavfsiz va tartibli.',
+      packing: ['Issiq kiyim (mavsumga qarab)', 'Xarita', 'Qulay poyabzal'],
+      activities: ['Tarixiy obidalar', 'Parklarda sayr', 'Tungi hayot']
+    },
+    en: {
+      name: 'Berlin',
+      description: 'The capital of Germany, a center of history and modernity.',
+      work: 'Tech, startups, and engineering.',
+      study: 'Humboldt University, Technical University of Berlin.',
+      live: 'Free atmosphere, green parks, and developed transport.',
+      travel: 'Brandenburg Gate, Reichstag, Berlin Wall.',
+      fact: 'Berlin has more bridges than Venice.',
+      images: ['berlin', 'germany', 'brandenburg'],
+      cuisine: [{ name: 'Currywurst', description: 'Famous German sausage.' }],
+      safety: 'The city is very safe and orderly.',
+      packing: ['Warm clothes (seasonal)', 'Map', 'Comfortable shoes'],
+      activities: ['Historical sites', 'Park walks', 'Nightlife']
     }
   }
 };
@@ -435,10 +585,19 @@ export default function App() {
     } catch (err: any) {
       console.error("Insight error:", err);
       const errorMsg = err.response?.data?.error || err.message;
+      
+      // Silence 404s as they are expected on static hosts like Netlify without proxy config
+      if (err.response?.status === 404) {
+        console.warn("API route not found (404). This is expected on static hosts.");
+        return;
+      }
+
       if (errorMsg?.includes("quota") || errorMsg?.includes("RESOURCE_EXHAUSTED")) {
         setApiError("Gemini API quota exceeded. Please try again in a minute.");
       } else {
-        setApiError(`Failed to fetch city insights: ${errorMsg || "Check your connection"}`);
+        // Only show error for non-404 issues if they are critical, 
+        // but for insights we can just be silent and use fallback UI
+        console.error(`Failed to fetch city insights: ${errorMsg}`);
       }
     } finally {
       setLoading(false);
@@ -875,7 +1034,7 @@ export default function App() {
             <div className="mb-8 p-6 bg-amber-50 border border-amber-200 rounded-3xl flex items-center gap-4 text-amber-800 animate-in fade-in slide-in-from-top-4 duration-500">
               <AlertCircle className="w-6 h-6 shrink-0" />
               <div className="flex-1">
-                <p className="font-bold">API Limit Reached</p>
+                <p className="font-bold">{apiError.includes("quota") ? "API Limit Reached" : t('error')}</p>
                 <p className="text-sm font-medium opacity-80">{apiError}</p>
                 {apiError.includes("Gemini") && (
                   <button 
@@ -1003,7 +1162,7 @@ export default function App() {
                   <div className="relative z-10">
                     <p className="text-indigo-200 font-bold text-xs uppercase tracking-widest mb-4">{t('daily_fact')}</p>
                     <p className="text-lg font-medium leading-relaxed italic">
-                      "{insight?.fact || "The highest temperature ever recorded on Earth was 56.7°C in Death Valley, USA."}"
+                      "{insight?.fact || (i18n.language === 'uz' ? "Dunyo bo'ylab sayohat qilish inson dunyoqarashini kengaytiradi." : "Traveling around the world expands one's horizons.")}"
                     </p>
                   </div>
                   <Sparkles className="absolute -bottom-4 -right-4 w-32 h-32 text-indigo-500 opacity-20 rotate-12" />
