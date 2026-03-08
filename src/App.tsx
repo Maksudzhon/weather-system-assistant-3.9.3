@@ -5,6 +5,7 @@ import {
   Cloud, 
   CloudRain, 
   Sun, 
+  Moon,
   Wind, 
   Droplets, 
   Clock, 
@@ -38,15 +39,26 @@ import {
   CheckCircle2,
   XCircle,
   Send,
+  Instagram,
   LayoutDashboard,
   CloudSun,
   Coins,
   BellRing,
-  Download
+  Download,
+  TrendingDown,
+  Bitcoin,
+  BarChart3,
+  Shirt,
+  WindArrowDown,
+  SunMedium,
+  Globe2,
+  MessageSquare,
+  SendHorizontal
 } from 'lucide-react';
 import axios from 'axios';
 import { format } from 'date-fns';
 import { formatInTimeZone } from 'date-fns-tz';
+import Markdown from 'react-markdown';
 import { 
   LineChart, 
   Line, 
@@ -64,7 +76,16 @@ import { QuizDashboard } from './components/QuizDashboard';
 import { AdminPanel } from './components/AdminPanel';
 import { Bell, ShieldCheck } from 'lucide-react';
 
+import { 
+  generateDailyFact, 
+  generateWeatherInsight, 
+  generateMarketInsight, 
+  generateTravelPlan, 
+  generateOutfitRecommendation 
+} from './services/geminiService';
+
 import { WEATHER_QUESTIONS, Question } from './data/questions';
+import { CITY_QUESTIONS } from './data/cityQuestions';
 
 // --- Constants & Types ---
 interface WeatherData {
@@ -75,6 +96,8 @@ interface WeatherData {
   feelsLike: number;
   sunrise: string;
   sunset: string;
+  aqi?: number;
+  uvIndex?: number;
   forecast: { time: string; temp: number }[];
   dailyForecast: { date: string; maxTemp: number; minTemp: number; condition: string }[];
 }
@@ -275,7 +298,7 @@ const STATIC_CITY_DATA: Record<string, Record<string, CityInsight>> = {
       cuisine: [{ name: 'Sushi', description: 'Yaponiyaning ramziy taomi.' }],
       safety: 'Dunyodagi eng xavfsiz shaharlardan biri.',
       packing: ['Yurish uchun poyabzal', 'Yapon tili lug\'ati', 'Yengil kiyim'],
-      activities: ['Sibuya chorrahasi', 'Ibodatxonalar', 'Elektronika dokonlari']
+      activities: ['Sibuya chorrahasi', 'Ibodatxonalar', "Elektronika do'konlari"]
     },
     en: {
       name: 'Tokyo',
@@ -333,7 +356,7 @@ const STATIC_CITY_DATA: Record<string, Record<string, CityInsight>> = {
       fact: 'Luvr muzeyini to\'liq ko\'rish uchun bir necha oy kerak bo\'ladi.',
       images: ['paris', 'eiffel', 'louvre'],
       cuisine: [{ name: 'Croissant', description: 'Mashhur fransuz nonushtasi.' }],
-      safety: 'Sayyohlar gavjum joylarda chontakkesarlardan ehtiyot boling.' ,
+      safety: "Sayyohlar gavjum joylarda cho'ntakkesarlardan ehtiyot bo'ling.",
       packing: ['Zamonaviy kiyim', 'Kamera', 'Qulay poyabzal'],
       activities: ['Eyfel minorasi', 'Sena daryosida sayr', 'Muzeylar']
     },
@@ -399,29 +422,146 @@ export default function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('theme') === 'dark');
   const [isNotificationsEnabled, setIsNotificationsEnabled] = useState(() => localStorage.getItem('notifications') === 'true');
-  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  
+  // New States for v3.9.2
+  const [showLangModal, setShowLangModal] = useState(() => !localStorage.getItem('user_lang'));
+  const [aiFact, setAiFact] = useState<string | null>(null);
+  const [aiInsight, setAiInsight] = useState<string | null>(null);
+  const [marketInsight, setMarketInsight] = useState<string | null>(null);
+  const [travelPlan, setTravelPlan] = useState<string | null>(null);
+  const [outfitRec, setOutfitRec] = useState<string | null>(null);
+  const [feedbackStatus, setFeedbackStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
 
-  useEffect(() => {
-    const handleBeforeInstallPrompt = (e: Event) => {
-      e.preventDefault();
-      setDeferredPrompt(e);
+  // CityQuiz State
+  const [cityQuizIndex, setCityQuizIndex] = useState(0);
+  const [cityQuizStats, setCityQuizStats] = useState(() => {
+    const saved = localStorage.getItem('city_quiz_stats');
+    return saved ? JSON.parse(saved) : {
+      total: 0,
+      correct: 0,
+      incorrect: 0,
+      daily: {}
     };
+  });
+  const [cityQuizFeedback, setCityQuizFeedback] = useState<{ isCorrect: boolean; message: string } | null>(null);
+  const [showCityQuizResult, setShowCityQuizResult] = useState(false);
+  const [answeredCityQuizIds, setAnsweredCityQuizIds] = useState<number[]>([]);
 
-    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+  const currentCityQuiz = useMemo(() => CITY_QUESTIONS[cityQuizIndex], [cityQuizIndex]);
 
-    return () => {
-      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+  const handleCityQuizAnswer = (optionIdx: number) => {
+    if (cityQuizFeedback) return;
+
+    const isCorrect = optionIdx === currentCityQuiz.correct;
+    const today = format(new Date(), 'yyyy-MM-dd');
+    
+    const newStats = {
+      ...cityQuizStats,
+      total: cityQuizStats.total + 1,
+      correct: cityQuizStats.correct + (isCorrect ? 1 : 0),
+      incorrect: cityQuizStats.incorrect + (isCorrect ? 0 : 1),
+      daily: {
+        ...cityQuizStats.daily,
+        [today]: {
+          total: (cityQuizStats.daily[today]?.total || 0) + 1,
+          correct: (cityQuizStats.daily[today]?.correct || 0) + (isCorrect ? 1 : 0)
+        }
+      }
     };
-  }, []);
+    
+    setCityQuizStats(newStats);
+    localStorage.setItem('city_quiz_stats', JSON.stringify(newStats));
 
-  const handleInstallPWA = async () => {
-    if (!deferredPrompt) return;
-    deferredPrompt.prompt();
-    const { outcome } = await deferredPrompt.userChoice;
-    if (outcome === 'accepted') {
-      setDeferredPrompt(null);
+    setCityQuizFeedback({
+      isCorrect,
+      message: isCorrect ? t('correct') : `${t('incorrect')} ${t('correct_was')} ${currentCityQuiz.options[i18n.language as 'uz' | 'ru' | 'en'][currentCityQuiz.correct]}`
+    });
+    setAnsweredCityQuizIds(prev => [...prev, cityQuizIndex]);
+  };
+
+  const nextCityQuiz = () => {
+    setCityQuizFeedback(null);
+    if (cityQuizIndex < CITY_QUESTIONS.length - 1) {
+      setCityQuizIndex(prev => prev + 1);
+    } else {
+      setShowCityQuizResult(true);
     }
   };
+
+  const resetCityQuiz = () => {
+    setCityQuizIndex(0);
+    setCityQuizFeedback(null);
+    setShowCityQuizResult(false);
+    setAnsweredCityQuizIds([]);
+  };
+
+  // Weather Quiz State
+  const [weatherQuizIndex, setWeatherQuizIndex] = useState(0);
+  const [weatherQuizFeedback, setWeatherQuizFeedback] = useState<{ isCorrect: boolean; message: string } | null>(null);
+  const [showWeatherQuizResult, setShowWeatherQuizResult] = useState(false);
+  const [answeredWeatherQuizIds, setAnsweredWeatherQuizIds] = useState<number[]>([]);
+
+  const currentWeatherQuiz = useMemo(() => WEATHER_QUESTIONS[weatherQuizIndex], [weatherQuizIndex]);
+
+  const handleWeatherQuizAnswer = (optionIdx: number) => {
+    if (weatherQuizFeedback) return;
+
+    const isCorrect = optionIdx === currentWeatherQuiz.correct;
+    const today = format(new Date(), 'yyyy-MM-dd');
+    
+    const newStats = {
+      ...quizStats,
+      total: quizStats.total + 1,
+      correct: quizStats.correct + (isCorrect ? 1 : 0),
+      incorrect: quizStats.incorrect + (isCorrect ? 0 : 1),
+      daily: {
+        ...quizStats.daily,
+        [today]: {
+          total: (quizStats.daily[today]?.total || 0) + 1,
+          correct: (quizStats.daily[today]?.correct || 0) + (isCorrect ? 1 : 0)
+        }
+      }
+    };
+    
+    setQuizStats(newStats);
+    localStorage.setItem('quiz_stats', JSON.stringify(newStats));
+
+    setWeatherQuizFeedback({
+      isCorrect,
+      message: isCorrect ? t('correct') : `${t('incorrect')} ${t('correct_was')} ${currentWeatherQuiz.options[i18n.language as 'uz' | 'ru' | 'en'][currentWeatherQuiz.correct]}`
+    });
+    setAnsweredWeatherQuizIds(prev => [...prev, weatherQuizIndex]);
+  };
+
+  const nextWeatherQuiz = () => {
+    setWeatherQuizFeedback(null);
+    if (weatherQuizIndex < WEATHER_QUESTIONS.length - 1) {
+      setWeatherQuizIndex(prev => prev + 1);
+    } else {
+      setShowWeatherQuizResult(true);
+    }
+  };
+
+  const resetWeatherQuiz = () => {
+    setWeatherQuizIndex(0);
+    setWeatherQuizFeedback(null);
+    setShowWeatherQuizResult(false);
+    setAnsweredWeatherQuizIds([]);
+  };
+
+  const [cryptoRates, setCryptoRates] = useState<any>(null);
+  const [isAiLoading, setIsAiLoading] = useState(false);
+  const [plannerData, setPlannerData] = useState({ destination: '', days: 3 });
+  const [notifications, setNotifications] = useState<{id: number, message: string, type: 'success' | 'error'}[]>([]);
+
+  const addNotification = (message: string, type: 'success' | 'error' = 'success') => {
+    const id = Date.now();
+    setNotifications(prev => [...prev, { id, message, type }]);
+    setTimeout(() => {
+      setNotifications(prev => prev.filter(n => n.id !== id));
+    }, 4000);
+  };
+
   const [survey, setSurvey] = useState({ from: '', to: '' });
   
   // Quiz Stats State
@@ -436,19 +576,17 @@ export default function App() {
   });
   
   // New States for v3.8.1
-  const [selectedCurrencies, setSelectedCurrencies] = useState<string[]>(['UZS', 'EUR', 'RUB', 'GBP', 'JPY', 'CNY']);
+  const [selectedCurrencies, setSelectedCurrencies] = useState<string[]>(['USD', 'EUR', 'RUB', 'UZS', 'GBP', 'JPY', 'CNY', 'CHF', 'CAD', 'AUD', 'KRW', 'TRY', 'AED', 'SAR', 'INR', 'BRL', 'ZAR', 'SGD', 'HKD', 'NZD', 'MXN', 'PLN', 'SEK', 'NOK', 'DKK', 'THB', 'MYR', 'IDR', 'PHP', 'VND']);
+  const [currencyAmount, setCurrencyAmount] = useState<number>(1);
+  const [currencyFrom, setCurrencyFrom] = useState('USD');
+  const [currencyTo, setCurrencyTo] = useState('UZS');
   const [worldClocks, setWorldClocks] = useState<{name: string, tz: string}[]>(WORLD_CITIES);
   const [clockSearch, setClockSearch] = useState('');
   const [isAddingClock, setIsAddingClock] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
 
   // Weather Quest States
-  const [quiz, setQuiz] = useState<Question | null>(null);
-  const [selectedOption, setSelectedOption] = useState<number | null>(null);
-  const [isAnswered, setIsAnswered] = useState(false);
-  const [isCorrect, setIsCorrect] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
-  const [answeredQuestionIds, setAnsweredQuestionIds] = useState<number[]>([]);
 
   // Admin Auth State
   const formatTranslatedDate = (date: Date, pattern: string) => {
@@ -485,19 +623,20 @@ export default function App() {
 
       const { latitude: lat, longitude: lon } = geoRes.data.results[0];
 
-      const res = await axios.get(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true&hourly=temperature_2m&daily=weathercode,temperature_2m_max,temperature_2m_min,sunrise,sunset&timezone=auto`);
+      const res = await axios.get(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true&hourly=temperature_2m,relative_humidity_2m,wind_speed_10m,uv_index&daily=weathercode,temperature_2m_max,temperature_2m_min,sunrise,sunset,uv_index_max&timezone=auto`);
       const current = res.data.current_weather;
       const hourly = res.data.hourly;
       const daily = res.data.daily;
 
-      setWeather({
+      const weatherData: WeatherData = {
         temp: current.temperature,
         condition: getWeatherCondition(current.weathercode),
-        humidity: 65,
+        humidity: hourly.relative_humidity_2m[0],
         windSpeed: current.windspeed,
         feelsLike: current.temperature - 2,
         sunrise: daily.sunrise[0].split('T')[1],
         sunset: daily.sunset[0].split('T')[1],
+        uvIndex: daily.uv_index_max[0],
         forecast: hourly.time.slice(0, 24).map((t: string, i: number) => ({
           time: format(new Date(t), 'HH:mm'),
           temp: hourly.temperature_2m[i]
@@ -508,7 +647,13 @@ export default function App() {
           minTemp: daily.temperature_2m_min[i],
           condition: getWeatherCondition(daily.weathercode[i])
         }))
-      });
+      };
+
+      setWeather(weatherData);
+      
+      // Trigger AI Insight
+      generateWeatherInsight(weatherData, i18n.language).then(setAiInsight);
+      generateOutfitRecommendation(weatherData.condition, weatherData.temp, i18n.language).then(setOutfitRec);
     } catch (err) {
       console.error("Weather error:", err);
     }
@@ -516,29 +661,19 @@ export default function App() {
 
   const fetchCurrency = async () => {
     try {
-      // Try primary API (Open Exchange Rates API - more reliable free tier)
       const res = await axios.get('https://open.er-api.com/v6/latest/USD');
       if (res.data && res.data.rates) {
         setCurrency({
           base: res.data.base_code || 'USD',
           rates: res.data.rates
         });
-      } else {
-        throw new Error("Invalid response from primary currency API");
       }
+      
+      // Fetch Crypto
+      const cryptoRes = await axios.get('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,binancecoin,solana,ripple,cardano,polkadot&vs_currencies=usd&include_24hr_change=true');
+      setCryptoRates(cryptoRes.data);
     } catch (err) {
-      console.error("Primary currency API failed, trying fallback:", err);
-      try {
-        // Fallback API
-        const res = await axios.get('https://api.exchangerate-api.com/v4/latest/USD');
-        setCurrency({
-          base: res.data.base,
-          rates: res.data.rates
-        });
-      } catch (fallbackErr) {
-        console.error("All currency APIs failed:", fallbackErr);
-        // Don't set error state yet, maybe it's a temporary network glitch
-      }
+      console.error("Currency/Crypto API error:", err);
     }
   };
 
@@ -659,54 +794,11 @@ export default function App() {
     );
   };
 
-  const fetchQuiz = async (force = false) => {
-    setLoading(true);
-    
-    // Use local questions instead of API
-    const availableQuestions = WEATHER_QUESTIONS.filter((_, index) => !answeredQuestionIds.includes(index));
-    
-    // If all questions answered, reset
-    const pool = availableQuestions.length > 0 ? availableQuestions : WEATHER_QUESTIONS;
-    if (availableQuestions.length === 0) setAnsweredQuestionIds([]);
-
-    const randomIndex = Math.floor(Math.random() * pool.length);
-    const actualIndex = WEATHER_QUESTIONS.indexOf(pool[randomIndex]);
-    
-    setQuiz(pool[randomIndex]);
-    setAnsweredQuestionIds(prev => [...prev, actualIndex]);
-    setSelectedOption(null);
-    setIsAnswered(false);
-    setLoading(false);
-  };
-
-  const handleQuizSubmit = () => {
-    if (selectedOption === null || !quiz) return;
-    const correct = selectedOption === quiz.correct;
-    setIsAnswered(true);
-    setIsCorrect(correct);
-
-    // Update Stats
-    const today = format(new Date(), 'yyyy-MM-dd');
-    const newStats = {
-      ...quizStats,
-      total: quizStats.total + 1,
-      correct: quizStats.correct + (correct ? 1 : 0),
-      incorrect: quizStats.incorrect + (correct ? 0 : 1),
-      daily: {
-        ...quizStats.daily,
-        [today]: {
-          total: (quizStats.daily[today]?.total || 0) + 1,
-          correct: (quizStats.daily[today]?.correct || 0) + (correct ? 1 : 0)
-        }
-      }
-    };
-    setQuizStats(newStats);
-    localStorage.setItem('quiz_stats', JSON.stringify(newStats));
-  };
-
   const toggleDarkMode = () => {
-    setIsDarkMode(!isDarkMode);
-    localStorage.setItem('theme', !isDarkMode ? 'dark' : 'light');
+    const newMode = !isDarkMode;
+    setIsDarkMode(newMode);
+    localStorage.setItem('theme', newMode ? 'dark' : 'light');
+    addNotification(t(newMode ? 'function_enabled' : 'function_disabled', { name: t('dark_mode') }));
   };
 
   const toggleNotifications = async () => {
@@ -718,6 +810,7 @@ export default function App() {
             setIsNotificationsEnabled(true);
             localStorage.setItem('notifications', 'true');
             setApiError(null);
+            addNotification(t('function_enabled', { name: t('notifications') }));
           } else if (permission === 'denied') {
             setApiError(t('notification_denied_hint'));
           }
@@ -727,6 +820,7 @@ export default function App() {
       } else {
         setIsNotificationsEnabled(false);
         localStorage.setItem('notifications', 'false');
+        addNotification(t('function_disabled', { name: t('notifications') }));
       }
     } catch (err) {
       console.error("Notification error:", err);
@@ -768,10 +862,6 @@ export default function App() {
   };
 
   useEffect(() => {
-    // Check if running as PWA (standalone)
-    const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
-    setIsPWA(isStandalone);
-    
     // Track activity
     fetch('/api/track-activity', { method: 'POST' }).catch(() => {});
     
@@ -807,9 +897,21 @@ export default function App() {
   }, [isNotificationsEnabled, t]);
 
   useEffect(() => {
-    // Auto-detect location on mount if no home city
+    fetchCurrency();
+    generateDailyFact(i18n.language).then(setAiFact);
+    generateMarketInsight(i18n.language).then(setMarketInsight);
+  }, [i18n.language]);
+
+  useEffect(() => {
     const autoLocate = async () => {
-      if (!homeCity && navigator.geolocation) {
+      const savedCity = localStorage.getItem('home_city');
+      if (savedCity) {
+        setCurrentCity(savedCity);
+        setHomeCity(savedCity);
+        return;
+      }
+
+      if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(async (position) => {
           try {
             const { latitude, longitude } = position.coords;
@@ -819,29 +921,15 @@ export default function App() {
               setCurrentCity(detectedCity);
               setHomeCity(detectedCity);
               localStorage.setItem('home_city', detectedCity);
-              fetchWeather(detectedCity);
-              fetchCityInsight(detectedCity);
             }
           } catch (err) {
             console.error("Location detection error:", err);
-            fetchWeather(currentCity);
-            fetchCityInsight(currentCity);
           }
-        }, () => {
-          fetchWeather(currentCity);
-          fetchCityInsight(currentCity);
         });
-      } else {
-        fetchWeather(currentCity);
-        fetchCityInsight(currentCity);
       }
     };
 
     autoLocate();
-  }, []); // Only on mount
-
-  useEffect(() => {
-    fetchCurrency();
   }, []);
 
   useEffect(() => {
@@ -850,12 +938,6 @@ export default function App() {
       fetchCityInsight(currentCity);
     }
   }, [currentCity, i18n.language]);
-
-  useEffect(() => {
-    if (activeTab === 'quest' && !quiz) {
-      fetchQuiz();
-    }
-  }, [activeTab]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -889,15 +971,15 @@ export default function App() {
     <button
       onClick={() => { setActiveTab(id); setIsSidebarOpen(false); }}
       className={cn(
-        "w-full flex items-center gap-4 px-6 py-4 text-sm font-semibold transition-all rounded-2xl mb-2",
+        "w-full flex items-center gap-4 px-6 py-4 text-sm font-semibold transition-all rounded-2xl mb-2 cursor-pointer group",
         activeTab === id 
-          ? "bg-indigo-600 text-white shadow-lg shadow-indigo-200" 
+          ? "bg-indigo-600 text-white shadow-lg dark:shadow-none shadow-indigo-200" 
           : isDarkMode 
             ? "text-slate-400 hover:bg-slate-800 hover:text-white"
             : "text-slate-500 hover:bg-slate-100 hover:text-slate-900"
       )}
     >
-      <Icon className="w-5 h-5" />
+      <Icon className={cn("w-5 h-5 transition-transform group-hover:scale-110", activeTab === id ? "text-white" : "text-indigo-500")} />
       {label}
     </button>
   );
@@ -907,6 +989,59 @@ export default function App() {
       "min-h-screen flex font-sans selection:bg-indigo-100 selection:text-indigo-900 transition-colors duration-300",
       isDarkMode ? "bg-slate-950 text-slate-100" : "bg-[#F1F5F9] text-slate-900"
     )}>
+      {/* Language Selection Modal */}
+      <AnimatePresence>
+        {showLangModal && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md"
+          >
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              className={cn(
+                "max-w-md w-full p-10 rounded-[40px] border shadow-2xl text-center",
+                isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"
+              )}
+            >
+              <div className="w-20 h-20 bg-indigo-600 rounded-3xl flex items-center justify-center text-white mx-auto mb-8 shadow-xl shadow-indigo-500/20">
+                <Languages className="w-10 h-10" />
+              </div>
+              <h2 className={cn("text-3xl font-black mb-4", isDarkMode ? "text-white" : "text-slate-900")}>{t('select_language')}</h2>
+              <p className="text-slate-500 font-medium mb-10">{t('welcome_message')}</p>
+              
+              <div className="grid grid-cols-1 gap-4">
+                {[
+                  { code: 'uz', name: "O'zbekcha" },
+                  { code: 'ru', name: "Русский" },
+                  { code: 'en', name: "English" }
+                ].map(lang => (
+                  <button
+                    key={lang.code}
+                    onClick={() => {
+                      i18n.changeLanguage(lang.code);
+                      localStorage.setItem('user_lang', lang.code);
+                      setShowLangModal(false);
+                      addNotification(t('lang_changed', { lang: lang.name }));
+                    }}
+                    className={cn(
+                      "w-full p-5 rounded-2xl font-black text-lg transition-all border flex items-center justify-between group",
+                      isDarkMode 
+                        ? "bg-slate-800 border-slate-700 text-white hover:border-indigo-500" 
+                        : "bg-slate-50 border-slate-200 text-slate-900 hover:border-indigo-500"
+                    )}
+                  >
+                    {lang.name}
+                    <ChevronRight className="w-5 h-5 text-slate-400 group-hover:text-indigo-500 transition-colors" />
+                  </button>
+                ))}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
       {/* Mobile Header */}
       <div className={cn(
         "lg:hidden fixed top-0 left-0 right-0 border-b z-50 px-4 h-16 flex items-center justify-between transition-colors",
@@ -945,11 +1080,15 @@ export default function App() {
           <nav>
             <SidebarItem id="dashboard" icon={LayoutDashboard} label={t('dashboard')} />
             <SidebarItem id="weather" icon={CloudSun} label={t('weather')} />
+            <SidebarItem id="market" icon={BarChart3} label={t('market_insights')} />
             <SidebarItem id="currency" icon={Coins} label={t('currency')} />
             <SidebarItem id="clock" icon={Clock} label={t('world_clock')} />
             <SidebarItem id="insights" icon={MapPin} label={t('city_insights')} />
+            <SidebarItem id="planner" icon={Compass} label={t('ai_planner')} />
             <SidebarItem id="flights" icon={Plane} label={t('flights')} />
             <SidebarItem id="quest" icon={Gamepad2} label={t('weather_quest')} />
+            <SidebarItem id="cityquiz" icon={Globe2} label={t('city_quiz')} />
+            <SidebarItem id="feedback" icon={MessageSquare} label={t('feedback')} />
             <SidebarItem id="notifications" icon={Bell} label={t('notifications')} />
             {showAdminLink && <SidebarItem id="admin" icon={ShieldCheck} label={t('admin_panel')} />}
             <SidebarItem id="upcoming" icon={Rocket} label={t('upcoming')} />
@@ -964,12 +1103,12 @@ export default function App() {
               onClick={toggleDarkMode}
               className={cn(
                 "w-full flex items-center justify-between px-6 py-4 text-sm font-semibold transition-all rounded-2xl mb-6",
-                isDarkMode ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-900"
+                isDarkMode ? "bg-slate-800 text-white hover:bg-slate-700" : "bg-slate-100 text-slate-900 hover:bg-slate-200"
               )}
             >
               <div className="flex items-center gap-3">
-                {isDarkMode ? <Clock className="w-5 h-5" /> : <Sun className="w-5 h-5" />}
-                {isDarkMode ? t('dark_mode') : t('light_mode')}
+                {isDarkMode ? <Sun className="w-5 h-5 text-amber-400" /> : <Moon className="w-5 h-5 text-slate-600" />}
+                {isDarkMode ? t('light_mode') : t('dark_mode')}
               </div>
               <div className={cn(
                 "w-10 h-5 rounded-full relative transition-colors",
@@ -981,22 +1120,15 @@ export default function App() {
                 )} />
               </div>
             </button>
-            <a 
-              href="https://t.me/weather_system_bot" 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="w-full flex items-center gap-4 px-6 py-4 text-sm font-semibold transition-all rounded-2xl mb-4 bg-indigo-50 text-indigo-600 hover:bg-indigo-100"
-            >
-              <Send className="w-5 h-5" />
-              Bot
-            </a>
             <button 
               onClick={() => setActiveTab('info')}
               className={cn(
                 "w-full flex items-center gap-4 px-6 py-4 text-sm font-semibold transition-all rounded-2xl mb-6",
                 activeTab === 'info' 
                   ? "bg-indigo-600 text-white shadow-lg shadow-indigo-200" 
-                  : "text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+                  : isDarkMode 
+                    ? "text-slate-400 hover:bg-slate-800 hover:text-white"
+                    : "text-slate-500 hover:bg-slate-100 hover:text-slate-900"
               )}
             >
               <Info className="w-5 h-5" />
@@ -1010,12 +1142,15 @@ export default function App() {
               {['uz', 'ru', 'en'].map(lang => (
                 <button
                   key={lang}
-                  onClick={() => i18n.changeLanguage(lang)}
+                  onClick={() => {
+                    i18n.changeLanguage(lang);
+                    addNotification(t('lang_changed', { lang: lang.toUpperCase() }));
+                  }}
                   className={cn(
-                    "py-2 text-xs font-bold rounded-lg transition-all border",
+                    "py-2 text-xs font-bold rounded-lg transition-all border cursor-pointer",
                     i18n.language === lang 
-                      ? "bg-indigo-50 border-indigo-200 text-indigo-600" 
-                      : "bg-white border-slate-200 text-slate-500 hover:border-slate-300"
+                      ? isDarkMode ? "bg-indigo-600 border-indigo-500 text-white" : "bg-indigo-50 border-indigo-200 text-indigo-600" 
+                      : isDarkMode ? "bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-600" : "bg-white border-slate-200 text-slate-500 hover:border-slate-300"
                   )}
                 >
                   {lang.toUpperCase()}
@@ -1055,8 +1190,8 @@ export default function App() {
           )}
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
             <div>
-              <h1 className="text-3xl font-black text-slate-900 mb-2">{t(activeTab)}</h1>
-              <div className="flex flex-wrap items-center gap-2 text-slate-500 font-medium">
+              <h1 className={cn("text-3xl font-black mb-2", isDarkMode ? "text-white" : "text-slate-900")}>{t(activeTab)}</h1>
+              <div className={cn("flex flex-wrap items-center gap-2 font-medium", isDarkMode ? "text-slate-400" : "text-slate-500")}>
                 <div className="flex items-center gap-2">
                   <MapPin className="w-4 h-4" />
                   <span>{currentCity}</span>
@@ -1065,7 +1200,10 @@ export default function App() {
                 {homeCity && currentCity !== homeCity && (
                   <button 
                     onClick={() => setCurrentCity(homeCity)}
-                    className="flex items-center gap-1.5 px-3 py-1 bg-indigo-50 text-indigo-600 rounded-full text-xs font-bold hover:bg-indigo-100 transition-all border border-indigo-100"
+                    className={cn(
+                      "flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold transition-all border",
+                      isDarkMode ? "bg-indigo-900/20 border-indigo-500/20 text-indigo-400 hover:bg-indigo-900/30" : "bg-indigo-50 border-indigo-100 text-indigo-600 hover:bg-indigo-100"
+                    )}
                   >
                     <Home className="w-3 h-3" />
                     {t('back_to_home')}
@@ -1074,7 +1212,10 @@ export default function App() {
 
                 <button 
                   onClick={updateGeolocation}
-                  className="flex items-center gap-1.5 px-3 py-1 bg-emerald-50 text-emerald-600 rounded-full text-xs font-bold hover:bg-emerald-100 transition-all border border-emerald-100"
+                  className={cn(
+                    "flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold transition-all border",
+                    isDarkMode ? "bg-emerald-900/20 border-emerald-500/20 text-emerald-400 hover:bg-emerald-900/30" : "bg-emerald-50 border-emerald-100 text-emerald-600 hover:bg-emerald-100"
+                  )}
                 >
                   <Navigation className={cn("w-3 h-3", loading && "animate-spin")} />
                   {t('update_geo')}
@@ -1094,7 +1235,10 @@ export default function App() {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder={t('search_city')}
-                className="w-full pl-12 pr-4 py-4 bg-white border border-slate-200 rounded-2xl shadow-sm focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all"
+                className={cn(
+                  "w-full pl-12 pr-4 py-4 rounded-2xl shadow-sm focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all border",
+                  isDarkMode ? "bg-slate-900 border-slate-800 text-white" : "bg-white border-slate-200 text-slate-900"
+                )}
               />
             </form>
           </div>
@@ -1127,7 +1271,17 @@ export default function App() {
                   {weather ? (
                     <div>
                       <div className={cn("text-6xl font-black mb-2", isDarkMode ? "text-white" : "text-slate-900")}>{Math.round(weather.temp)}°</div>
-                      <p className="text-slate-500 font-medium">{t(`weather_${weather.condition.toLowerCase().replace(' ', '_')}`) || weather.condition}</p>
+                      <p className="text-slate-500 font-medium mb-4">{t(`weather_${weather.condition.toLowerCase().replace(' ', '_')}`) || weather.condition}</p>
+                      <div className="flex gap-4 border-t border-slate-100 dark:border-slate-800 pt-4">
+                        <div className="flex items-center gap-2">
+                          <Sun className="w-4 h-4 text-amber-500" />
+                          <span className="text-xs font-bold text-slate-400">{weather.sunrise}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Moon className="w-4 h-4 text-indigo-400" />
+                          <span className="text-xs font-bold text-slate-400">{weather.sunset}</span>
+                        </div>
+                      </div>
                     </div>
                   ) : <Loader2 className="animate-spin text-indigo-600" />}
                 </div>
@@ -1144,9 +1298,9 @@ export default function App() {
                         {selectedCurrencies.slice(0, 3).map(code => (
                           <div key={code} className={cn(
                             "flex justify-between items-center p-3 rounded-xl transition-all",
-                            isDarkMode ? "bg-slate-800" : "bg-slate-50"
+                            isDarkMode ? "bg-slate-800/50 border border-slate-700" : "bg-slate-50"
                           )}>
-                            <span className="font-bold">USD/{code}</span>
+                            <span className={cn("font-bold", isDarkMode ? "text-slate-300" : "text-slate-700")}>USD/{code}</span>
                             <span className="text-indigo-600 font-black">
                               {currency.rates[code] > 100 ? currency.rates[code].toLocaleString() : currency.rates[code].toFixed(4)}
                             </span>
@@ -1157,39 +1311,113 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Daily Fact Card */}
-                <div className="bg-indigo-600 p-8 rounded-3xl shadow-xl shadow-indigo-100 text-white relative overflow-hidden">
+                {/* AI Daily Fact Card */}
+                <div className="bg-indigo-600 p-8 rounded-3xl shadow-xl dark:shadow-none text-white relative overflow-hidden">
                   <div className="relative z-10">
-                    <p className="text-indigo-200 font-bold text-xs uppercase tracking-widest mb-4">{t('daily_fact')}</p>
-                    <p className="text-lg font-medium leading-relaxed italic">
-                      "{insight?.fact || (i18n.language === 'uz' ? "Dunyo bo'ylab sayohat qilish inson dunyoqarashini kengaytiradi." : "Traveling around the world expands one's horizons.")}"
-                    </p>
+                    <p className="text-indigo-200 font-bold text-xs uppercase tracking-widest mb-4">{t('ai_fact_title')}</p>
+                    {aiFact ? (
+                      <p className="text-lg font-medium leading-relaxed italic">
+                        "{aiFact}"
+                      </p>
+                    ) : (
+                      <div className="flex items-center gap-2 text-indigo-200">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span className="text-sm">{t('ai_generating')}</span>
+                      </div>
+                    )}
                   </div>
-                  <Sparkles className="absolute -bottom-4 -right-4 w-32 h-32 text-indigo-500 opacity-20 rotate-12" />
                 </div>
 
-                {/* Weather Details & Forecast */}
-                {weather && (
-                  <>
-                    {/* Sunrise & Sunset */}
-                    <div className={cn(
-                      "p-8 rounded-3xl shadow-sm border transition-all",
-                      isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"
-                    )}>
-                      <p className="text-slate-400 font-bold text-xs uppercase tracking-widest mb-6">{t('weather_facts')}</p>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="flex flex-col items-center p-4 bg-amber-50 rounded-2xl border border-amber-100">
-                          <Sun className="w-8 h-8 text-amber-500 mb-2" />
-                          <p className="text-xs font-bold text-amber-800 uppercase mb-1">{t('sunrise')}</p>
-                          <p className="text-lg font-black text-amber-900">{weather.sunrise}</p>
+                {/* AI Weather Insight Card */}
+                <div className={cn(
+                  "p-8 rounded-3xl border transition-all",
+                  isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200 shadow-sm"
+                )}>
+                  <p className="text-slate-400 font-bold text-xs uppercase tracking-widest mb-4">{t('ai_weather_insight')}</p>
+                  {weather && (
+                    <div className="flex gap-6 mb-6 pb-6 border-b border-slate-100 dark:border-slate-800">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2 bg-amber-50 dark:bg-amber-900/20 rounded-xl">
+                          <Sun className="w-5 h-5 text-amber-500" />
                         </div>
-                        <div className="flex flex-col items-center p-4 bg-indigo-50 rounded-2xl border border-indigo-100">
-                          <CloudSun className="w-8 h-8 text-indigo-500 mb-2" />
-                          <p className="text-xs font-bold text-indigo-800 uppercase mb-1">{t('sunset')}</p>
-                          <p className="text-lg font-black text-indigo-900">{weather.sunset}</p>
+                        <div>
+                          <p className="text-[10px] font-bold text-slate-400 uppercase">{t('sunrise')}</p>
+                          <p className={cn("text-sm font-black", isDarkMode ? "text-white" : "text-slate-900")}>{weather.sunrise}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className="p-2 bg-indigo-50 dark:bg-indigo-900/20 rounded-xl">
+                          <Moon className="w-5 h-5 text-indigo-400" />
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-bold text-slate-400 uppercase">{t('sunset')}</p>
+                          <p className={cn("text-sm font-black", isDarkMode ? "text-white" : "text-slate-900")}>{weather.sunset}</p>
                         </div>
                       </div>
                     </div>
+                  )}
+                  {aiInsight ? (
+                    <div className={cn("text-sm font-medium leading-relaxed", isDarkMode ? "text-slate-300" : "text-slate-700")}>
+                      <Markdown>{aiInsight}</Markdown>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 text-slate-400">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span className="text-sm">{t('ai_generating')}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* AQI & UV Index Card */}
+                <div className={cn(
+                  "p-8 rounded-3xl border transition-all",
+                  isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200 shadow-sm"
+                )}>
+                  <p className="text-slate-400 font-bold text-xs uppercase tracking-widest mb-6">{t('weather_facts')}</p>
+                  <div className="grid grid-cols-2 gap-4 mb-6">
+                    <div className={cn(
+                      "flex flex-col items-center p-4 rounded-2xl border",
+                      isDarkMode ? "bg-emerald-900/20 border-emerald-500/20" : "bg-emerald-50 border-emerald-100"
+                    )}>
+                      <WindArrowDown className="w-8 h-8 text-emerald-500 mb-2" />
+                      <p className={cn("text-xs font-bold uppercase mb-1", isDarkMode ? "text-emerald-400" : "text-emerald-800")}>{t('aqi')}</p>
+                      <p className={cn("text-lg font-black", isDarkMode ? "text-emerald-300" : "text-emerald-900")}>{t('aqi_good')}</p>
+                    </div>
+                    <div className={cn(
+                      "flex flex-col items-center p-4 rounded-2xl border",
+                      isDarkMode ? "bg-orange-900/20 border-orange-500/20" : "bg-orange-50 border-orange-100"
+                    )}>
+                      <SunMedium className="w-8 h-8 text-orange-500 mb-2" />
+                      <p className={cn("text-xs font-bold uppercase mb-1", isDarkMode ? "text-orange-400" : "text-orange-800")}>{t('uv_index')}</p>
+                      <p className={cn("text-lg font-black", isDarkMode ? "text-orange-300" : "text-orange-900")}>{weather?.uvIndex || 0}</p>
+                    </div>
+                  </div>
+
+                  {weather && (
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className={cn(
+                        "flex items-center gap-3 p-4 rounded-2xl border",
+                        isDarkMode ? "bg-slate-800/50 border-slate-700" : "bg-slate-50 border-slate-100"
+                      )}>
+                        <Sun className="w-6 h-6 text-amber-500" />
+                        <div>
+                          <p className="text-[10px] font-bold text-slate-400 uppercase">{t('sunrise')}</p>
+                          <p className={cn("font-black", isDarkMode ? "text-white" : "text-slate-900")}>{weather.sunrise}</p>
+                        </div>
+                      </div>
+                      <div className={cn(
+                        "flex items-center gap-3 p-4 rounded-2xl border",
+                        isDarkMode ? "bg-slate-800/50 border-slate-700" : "bg-slate-50 border-slate-100"
+                      )}>
+                        <Moon className="w-6 h-6 text-indigo-400" />
+                        <div>
+                          <p className="text-[10px] font-bold text-slate-400 uppercase">{t('sunset')}</p>
+                          <p className={cn("font-black", isDarkMode ? "text-white" : "text-slate-900")}>{weather.sunset}</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
 
                     {/* 5-Day Forecast */}
                     <div className={cn(
@@ -1198,7 +1426,7 @@ export default function App() {
                     )}>
                       <p className="text-slate-400 font-bold text-xs uppercase tracking-widest mb-6">{t('forecast_5day')}</p>
                       <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
-                        {weather.dailyForecast.slice(1, 6).map((day, idx) => (
+                        {weather ? weather.dailyForecast.slice(1, 6).map((day, idx) => (
                           <div key={idx} className={cn(
                             "flex flex-col items-center p-4 rounded-2xl border transition-all",
                             isDarkMode ? "bg-slate-800 border-slate-700" : "bg-slate-50 border-slate-100"
@@ -1206,11 +1434,15 @@ export default function App() {
                             <p className="text-xs font-bold text-slate-500 mb-2">{getTranslatedDate(new Date(day.date))}</p>
                             <AnimatedWeather condition={day.condition} size={32} />
                             <div className="mt-2 text-center">
-                              <p className="text-sm font-black text-slate-900">{Math.round(day.maxTemp)}°</p>
+                              <p className={cn("text-sm font-black", isDarkMode ? "text-white" : "text-slate-900")}>{Math.round(day.maxTemp)}°</p>
                               <p className="text-xs font-bold text-slate-400">{Math.round(day.minTemp)}°</p>
                             </div>
                           </div>
-                        ))}
+                        )) : (
+                          <div className="col-span-full flex justify-center py-4">
+                            <Loader2 className="animate-spin text-indigo-600" />
+                          </div>
+                        )}
                       </div>
                     </div>
 
@@ -1235,7 +1467,11 @@ export default function App() {
                               key={i} 
                               className={cn(
                                 "aspect-square flex items-center justify-center text-xs font-bold rounded-lg transition-all",
-                                isToday ? "bg-indigo-600 text-white shadow-lg shadow-indigo-200" : "hover:bg-slate-100 text-slate-600"
+                                isToday 
+                                  ? "bg-indigo-600 text-white" 
+                                  : isDarkMode 
+                                    ? "hover:bg-slate-800 text-slate-400" 
+                                    : "hover:bg-slate-100 text-slate-600"
                               )}
                             >
                               {day}
@@ -1244,12 +1480,13 @@ export default function App() {
                         })}
                       </div>
                     </div>
-                  </>
-                )}
 
                 {/* Weather Chart */}
-                <div className="md:col-span-2 lg:col-span-3 bg-white p-8 rounded-3xl shadow-sm border border-slate-200">
-                  <h3 className="text-xl font-bold mb-6">{t('temp')} (24h)</h3>
+                <div className={cn(
+                  "md:col-span-2 lg:col-span-3 p-8 rounded-3xl shadow-sm border transition-all",
+                  isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"
+                )}>
+                  <h3 className={cn("text-xl font-bold mb-6", isDarkMode ? "text-white" : "text-slate-900")}>{t('temp')} (24h)</h3>
                   <div className="h-64">
                     {weather ? (
                       <ResponsiveContainer width="100%" height="100%">
@@ -1260,11 +1497,17 @@ export default function App() {
                               <stop offset="95%" stopColor="#4f46e5" stopOpacity={0}/>
                             </linearGradient>
                           </defs>
-                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                          <XAxis dataKey="time" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 12}} />
-                          <YAxis axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 12}} />
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={isDarkMode ? "#1e293b" : "#f1f5f9"} />
+                          <XAxis dataKey="time" axisLine={false} tickLine={false} tick={{fill: isDarkMode ? '#64748b' : '#94a3b8', fontSize: 12}} />
+                          <YAxis axisLine={false} tickLine={false} tick={{fill: isDarkMode ? '#64748b' : '#94a3b8', fontSize: 12}} />
                           <Tooltip 
-                            contentStyle={{borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)'}}
+                            contentStyle={{
+                              borderRadius: '16px', 
+                              border: 'none', 
+                              boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)',
+                              backgroundColor: isDarkMode ? '#0f172a' : '#ffffff',
+                              color: isDarkMode ? '#f8fafc' : '#0f172a'
+                            }}
                           />
                           <Area type="monotone" dataKey="temp" stroke="#4f46e5" strokeWidth={3} fillOpacity={1} fill="url(#colorTemp)" />
                         </AreaChart>
@@ -1272,6 +1515,149 @@ export default function App() {
                     ) : <Loader2 className="animate-spin text-indigo-600" />}
                   </div>
                 </div>
+              </div>
+            )}
+
+            {/* Market Insights View */}
+            {activeTab === 'market' && (
+              <div className="space-y-8">
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                  <div className={cn(
+                    "lg:col-span-2 p-10 rounded-[40px] border shadow-sm",
+                    isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"
+                  )}>
+                    <div className="flex items-center gap-4 mb-8">
+                      <div className="w-12 h-12 bg-indigo-600 rounded-2xl flex items-center justify-center text-white">
+                        <BarChart3 className="w-6 h-6" />
+                      </div>
+                      <div>
+                        <h2 className={cn("text-2xl font-black", isDarkMode ? "text-white" : "text-slate-900")}>{t('market_insights')}</h2>
+                        <p className="text-slate-500 font-medium">{t('market_insight_desc')}</p>
+                      </div>
+                    </div>
+                    
+                    {marketInsight ? (
+                      <div className={cn(
+                        "p-8 rounded-3xl border leading-relaxed",
+                        isDarkMode ? "bg-slate-800/50 border-slate-700 text-slate-300" : "bg-slate-50 border-slate-100 text-slate-700"
+                      )}>
+                        <Markdown>{marketInsight}</Markdown>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center justify-center py-20 text-slate-400">
+                        <Loader2 className="w-10 h-10 animate-spin mb-4" />
+                        <p className="font-bold">{t('ai_generating')}</p>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="space-y-6">
+                    <div className={cn(
+                      "p-8 rounded-[40px] border shadow-sm",
+                      isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"
+                    )}>
+                      <div className="flex items-center justify-between mb-6">
+                        <h3 className={cn("text-xl font-black", isDarkMode ? "text-white" : "text-slate-900")}>{t('crypto_market')}</h3>
+                        <Bitcoin className="w-6 h-6 text-orange-500" />
+                      </div>
+                      <div className="space-y-4">
+                        {cryptoRates ? Object.entries(cryptoRates).map(([id, data]: [string, any]) => (
+                          <div key={id} className={cn(
+                            "flex justify-between items-center p-4 rounded-2xl border transition-all",
+                            isDarkMode ? "bg-slate-800/50 border-slate-700" : "bg-slate-50 border-slate-100"
+                          )}>
+                            <div>
+                              <p className={cn("font-black uppercase", isDarkMode ? "text-white" : "text-slate-900")}>{id}</p>
+                              <p className={cn("text-xs font-bold", data.usd_24h_change >= 0 ? "text-emerald-500" : "text-rose-500")}>
+                                {data.usd_24h_change >= 0 ? '+' : ''}{data.usd_24h_change.toFixed(2)}%
+                              </p>
+                            </div>
+                            <p className="text-indigo-600 font-black">${data.usd.toLocaleString()}</p>
+                          </div>
+                        )) : <Loader2 className="animate-spin text-indigo-600 mx-auto" />}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* AI Travel Planner View */}
+            {activeTab === 'planner' && (
+              <div className="max-w-4xl mx-auto">
+                <div className={cn(
+                  "p-10 rounded-[40px] border shadow-sm mb-8",
+                  isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"
+                )}>
+                  <div className="flex items-center gap-4 mb-10">
+                    <div className="w-12 h-12 bg-indigo-600 rounded-2xl flex items-center justify-center text-white">
+                      <Compass className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <h2 className={cn("text-2xl font-black", isDarkMode ? "text-white" : "text-slate-900")}>{t('ai_planner')}</h2>
+                      <p className="text-slate-500 font-medium">AI-powered travel itinerary generator</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">{t('travel_destination')}</label>
+                      <input 
+                        type="text"
+                        value={plannerData.destination}
+                        onChange={(e) => setPlannerData({...plannerData, destination: e.target.value})}
+                        placeholder={t('travel_destination')}
+                        className={cn(
+                          "w-full p-4 rounded-2xl border focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all",
+                          isDarkMode ? "bg-slate-800 border-slate-700 text-white" : "bg-slate-50 border-slate-200 text-slate-900"
+                        )}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">{t('travel_duration')}</label>
+                      <input 
+                        type="number"
+                        value={plannerData.days}
+                        onChange={(e) => setPlannerData({...plannerData, days: parseInt(e.target.value)})}
+                        placeholder={t('travel_duration')}
+                        className={cn(
+                          "w-full p-4 rounded-2xl border focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all",
+                          isDarkMode ? "bg-slate-800 border-slate-700 text-white" : "bg-slate-50 border-slate-200 text-slate-900"
+                        )}
+                      />
+                    </div>
+                  </div>
+
+                  <button 
+                    onClick={() => {
+                      setIsAiLoading(true);
+                      generateTravelPlan(plannerData.destination, plannerData.days, i18n.language)
+                        .then(setTravelPlan)
+                        .finally(() => setIsAiLoading(false));
+                    }}
+                    disabled={!plannerData.destination || isAiLoading}
+                    className={cn(
+                      "w-full py-5 bg-indigo-600 text-white rounded-2xl font-black text-lg hover:bg-indigo-700 transition-all disabled:opacity-50 flex items-center justify-center gap-3",
+                      isDarkMode ? "" : "shadow-xl shadow-indigo-500/20"
+                    )}
+                  >
+                    {isAiLoading ? <Loader2 className="animate-spin" /> : <Sparkles className="w-6 h-6" />}
+                    {t('generate_plan')}
+                  </button>
+                </div>
+
+                {travelPlan && (
+                  <motion.div 
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className={cn(
+                      "p-10 rounded-[40px] border shadow-sm leading-relaxed",
+                      isDarkMode ? "bg-slate-900 border-slate-800 text-slate-300" : "bg-white border-slate-200 text-slate-700"
+                    )}
+                  >
+                    <Markdown>{travelPlan}</Markdown>
+                  </motion.div>
+                )}
               </div>
             )}
 
@@ -1309,25 +1695,48 @@ export default function App() {
                       <p className={cn("text-3xl font-black", isDarkMode ? "text-white" : "text-slate-900")}>{Math.round(weather.feelsLike)}°</p>
                     </div>
                     <div className={cn("p-8 rounded-3xl border transition-all", isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200")}>
-                      <Sun className="w-6 h-6 text-orange-500 mb-4" />
-                      <p className="text-slate-400 text-sm font-bold uppercase mb-1">UV Index</p>
-                      <p className={cn("text-3xl font-black", isDarkMode ? "text-white" : "text-slate-900")}>Low</p>
+                      <SunMedium className="w-6 h-6 text-orange-500 mb-4" />
+                      <p className="text-slate-400 text-sm font-bold uppercase mb-1">{t('uv_index')}</p>
+                      <p className={cn("text-3xl font-black", isDarkMode ? "text-white" : "text-slate-900")}>{weather.uvIndex || 0}</p>
                     </div>
                   </div>
                 </div>
 
-                {/* Weather Mood Section */}
-                <div className={cn("p-10 rounded-[40px] border transition-all", isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200")}>
-                  <div className="flex items-center gap-3 mb-8">
-                    <Sparkles className="w-6 h-6 text-indigo-600" />
-                    <h3 className="text-2xl font-black">{t('activities')}</h3>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-                    {insight?.activities?.map((act, i) => (
-                      <div key={i} className={cn("p-6 rounded-3xl border transition-all", isDarkMode ? "bg-slate-800 border-slate-700" : "bg-slate-50 border-slate-100")}>
-                        <p className={cn("font-bold", isDarkMode ? "text-slate-200" : "text-slate-900")}>{act}</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* AI Outfit Recommendation */}
+                  <div className={cn("p-10 rounded-[40px] border transition-all", isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200")}>
+                    <div className="flex items-center gap-3 mb-8">
+                      <Shirt className="w-6 h-6 text-indigo-600" />
+                      <h3 className="text-2xl font-black">{t('outfit_recommender')}</h3>
+                    </div>
+                    {outfitRec ? (
+                      <div className={cn("p-6 rounded-3xl border leading-relaxed", isDarkMode ? "bg-slate-800/50 border-slate-700 text-slate-300" : "bg-slate-50 border-slate-100 text-slate-700")}>
+                        <Markdown>{outfitRec}</Markdown>
                       </div>
-                    ))}
+                    ) : (
+                      <div className="flex items-center gap-2 text-slate-400">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span className="text-sm">{t('ai_generating')}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* AI Weather Insight */}
+                  <div className={cn("p-10 rounded-[40px] border transition-all", isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200")}>
+                    <div className="flex items-center gap-3 mb-8">
+                      <Sparkles className="w-6 h-6 text-indigo-600" />
+                      <h3 className="text-2xl font-black">{t('ai_weather_insight')}</h3>
+                    </div>
+                    {aiInsight ? (
+                      <div className={cn("p-6 rounded-3xl border leading-relaxed", isDarkMode ? "bg-slate-800/50 border-slate-700 text-slate-300" : "bg-slate-50 border-slate-100 text-slate-700")}>
+                        <Markdown>{aiInsight}</Markdown>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2 text-slate-400">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span className="text-sm">{t('ai_generating')}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1335,59 +1744,256 @@ export default function App() {
 
             {/* Currency View */}
             {activeTab === 'currency' && currency && (
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                <div className="lg:col-span-2 bg-white p-8 rounded-3xl border border-slate-200">
-                  <div className="flex justify-between items-center mb-8">
-                    <h3 className="text-2xl font-black">{t('select_currencies')}</h3>
-                    <div className="text-xs font-bold text-slate-400 uppercase tracking-widest">Base: USD</div>
-                  </div>
-                  
-                  <div className="flex flex-wrap gap-2 mb-10 pb-10 border-b border-slate-100">
-                    {Object.keys(currency.rates).slice(0, 24).map(code => (
-                      <button
-                        key={code}
-                        onClick={() => toggleCurrency(code)}
-                        className={cn(
-                          "px-4 py-2 rounded-xl text-sm font-bold border transition-all",
-                          selectedCurrencies.includes(code)
-                            ? "bg-indigo-600 border-indigo-600 text-white shadow-lg shadow-indigo-100"
-                            : "bg-white border-slate-200 text-slate-500 hover:border-slate-300"
-                        )}
-                      >
-                        {code}
-                      </button>
-                    ))}
+              <div className="space-y-8">
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                  <div className={cn(
+                    "lg:col-span-2 p-10 rounded-[40px] border shadow-sm",
+                    isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"
+                  )}>
+                    <div className="flex items-center justify-between mb-10">
+                      <h3 className={cn("text-2xl font-black", isDarkMode ? "text-white" : "text-slate-900")}>{t('currency_rates')}</h3>
+                      <div className={cn(
+                        "p-4 bg-indigo-600 text-white rounded-2xl",
+                        isDarkMode ? "" : "shadow-lg shadow-indigo-500/20"
+                      )}>
+                        <DollarSign className="w-6 h-6" />
+                      </div>
+                    </div>
+
+                    {/* Currency Comparison Tool */}
+                    <div className={cn(
+                      "mb-10 p-8 rounded-3xl border",
+                      isDarkMode ? "bg-slate-800/30 border-slate-700" : "bg-indigo-50/50 border-indigo-100"
+                    )}>
+                      <h4 className="text-lg font-black mb-6 flex items-center gap-2">
+                        <RefreshCw className="w-5 h-5 text-indigo-600" />
+                        {t('compare_currencies')}
+                      </h4>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+                        <div className="space-y-2">
+                          <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">{t('amount')}</label>
+                          <input 
+                            type="number" 
+                            value={currencyAmount}
+                            onChange={(e) => setCurrencyAmount(Number(e.target.value))}
+                            className={cn(
+                              "w-full p-4 rounded-2xl border outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-black",
+                              isDarkMode ? "bg-slate-800 border-slate-700 text-white" : "bg-white border-slate-200"
+                            )}
+                          />
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="space-y-2">
+                            <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">{t('from')}</label>
+                            <select 
+                              value={currencyFrom}
+                              onChange={(e) => setCurrencyFrom(e.target.value)}
+                              className={cn(
+                                "w-full p-4 rounded-2xl border outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-bold",
+                                isDarkMode ? "bg-slate-800 border-slate-700 text-white" : "bg-white border-slate-200"
+                              )}
+                            >
+                              {Object.keys(currency.rates).map(code => <option key={code} value={code}>{code}</option>)}
+                            </select>
+                          </div>
+                          <div className="space-y-2">
+                            <label className="text-xs font-bold text-slate-500 uppercase tracking-widest">{t('to')}</label>
+                            <select 
+                              value={currencyTo}
+                              onChange={(e) => setCurrencyTo(e.target.value)}
+                              className={cn(
+                                "w-full p-4 rounded-2xl border outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-bold",
+                                isDarkMode ? "bg-slate-800 border-slate-700 text-white" : "bg-white border-slate-200"
+                              )}
+                            >
+                              {Object.keys(currency.rates).map(code => <option key={code} value={code}>{code}</option>)}
+                            </select>
+                          </div>
+                        </div>
+                        <div className={cn(
+                          "p-4 rounded-2xl border text-center",
+                          isDarkMode ? "bg-indigo-900/20 border-indigo-900/30" : "bg-white border-indigo-100"
+                        )}>
+                          <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">Result</p>
+                          <p className="text-2xl font-black text-indigo-600">
+                            {((currencyAmount / currency.rates[currencyFrom]) * currency.rates[currencyTo]).toLocaleString(undefined, { maximumFractionDigits: 2 })} {currencyTo}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="flex flex-wrap gap-2 mb-10 pb-10 border-b border-slate-100 dark:border-slate-800">
+                      {['USD', 'EUR', 'GBP', 'JPY', 'CNY', 'RUB', 'UZS', 'CHF', 'CAD', 'AUD', 'KRW', 'TRY', 'AED', 'SAR', 'INR'].map(code => (
+                        <button
+                          key={code}
+                          onClick={() => toggleCurrency(code)}
+                          className={cn(
+                            "px-4 py-2 rounded-xl text-sm font-bold border transition-all",
+                            selectedCurrencies.includes(code)
+                              ? "bg-indigo-600 border-indigo-600 text-white shadow-lg dark:shadow-none shadow-indigo-100"
+                              : isDarkMode ? "bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-600" : "bg-white border-slate-200 text-slate-500 hover:border-slate-300"
+                          )}
+                        >
+                          {code}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {selectedCurrencies.map(code => (
+                        <div key={code} className={cn(
+                          "flex items-center justify-between p-6 rounded-3xl border transition-all group hover:border-indigo-500",
+                          isDarkMode ? "bg-slate-800/50 border-slate-700" : "bg-slate-50 border-slate-100"
+                        )}>
+                          <div className="flex items-center gap-4">
+                            <div className="w-12 h-12 bg-white dark:bg-slate-700 rounded-2xl flex items-center justify-center shadow-sm font-black text-indigo-600 text-lg">
+                              {code.substring(0, 2)}
+                            </div>
+                            <span className={cn("font-black text-lg", isDarkMode ? "text-white" : "text-slate-900")}>{code}</span>
+                          </div>
+                          <span className="text-xl font-black text-indigo-600 group-hover:scale-110 transition-transform">
+                            {currency.rates[code] > 100 ? currency.rates[code].toLocaleString() : currency.rates[code].toFixed(4)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    {selectedCurrencies.map(code => (
-                      <div key={code} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100 hover:border-indigo-200 transition-all group">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center font-bold text-xs shadow-sm">{code}</div>
-                          <span className="font-bold text-slate-700">{t(code.toLowerCase()) || code}</span>
-                        </div>
-                        <span className="font-black text-indigo-600 group-hover:scale-110 transition-transform">
-                          {currency.rates[code] > 100 ? currency.rates[code].toLocaleString() : currency.rates[code].toFixed(4)}
-                        </span>
+                  <div className="space-y-6">
+                    {/* Crypto Rates Card */}
+                    <div className={cn(
+                      "p-8 rounded-[40px] border shadow-sm",
+                      isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"
+                    )}>
+                      <div className="flex items-center justify-between mb-6">
+                        <h3 className={cn("text-xl font-black", isDarkMode ? "text-white" : "text-slate-900")}>{t('crypto_rates')}</h3>
+                        <Bitcoin className="w-6 h-6 text-orange-500" />
                       </div>
-                    ))}
-                  </div>
-                </div>
-                <div className="space-y-6">
-                  <div className="bg-indigo-600 p-8 rounded-3xl text-white">
-                    <TrendingUp className="w-8 h-8 mb-4" />
-                    <h4 className="text-xl font-bold mb-2">Market Insight</h4>
-                    <p className="text-indigo-100 leading-relaxed">The market is currently stable. Major currencies are showing minimal volatility today.</p>
-                  </div>
-                  <div className="bg-white p-8 rounded-3xl border border-slate-200">
-                    <RefreshCw className="w-6 h-6 text-slate-400 mb-4" />
-                    <p className="text-slate-500 text-sm">Last updated: {format(new Date(), 'HH:mm:ss')}</p>
+                      <div className="space-y-4">
+                        {cryptoRates ? Object.entries(cryptoRates).map(([id, data]: [string, any]) => (
+                          <div key={id} className={cn(
+                            "flex justify-between items-center p-4 rounded-2xl border transition-all",
+                            isDarkMode ? "bg-slate-800/50 border-slate-700" : "bg-slate-50 border-slate-100"
+                          )}>
+                            <div>
+                              <p className={cn("font-black uppercase", isDarkMode ? "text-white" : "text-slate-900")}>{id}</p>
+                              <p className={cn("text-xs font-bold", data.usd_24h_change >= 0 ? "text-emerald-500" : "text-rose-500")}>
+                                {data.usd_24h_change >= 0 ? '+' : ''}{data.usd_24h_change.toFixed(2)}%
+                              </p>
+                            </div>
+                            <p className="text-indigo-600 font-black">${data.usd.toLocaleString()}</p>
+                          </div>
+                        )) : <Loader2 className="animate-spin text-indigo-600 mx-auto" />}
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
             )}
 
-            {/* Weather Quest View */}
+            {/* CityQuiz View */}
+            {activeTab === 'cityquiz' && (
+              <div className="space-y-12">
+                <div className="max-w-2xl mx-auto">
+                  <div className={cn(
+                    "p-10 rounded-[40px] border shadow-xl transition-all",
+                    isDarkMode ? "bg-slate-900 border-slate-800 shadow-slate-950/50" : "bg-white border-slate-200 shadow-slate-200/50"
+                  )}>
+                    <div className="flex items-center gap-3 mb-8">
+                      <Globe2 className="w-8 h-8 text-indigo-600" />
+                      <h3 className="text-3xl font-black">{t('city_quiz')}</h3>
+                    </div>
+
+                    {!showCityQuizResult ? (
+                      <div className="space-y-8">
+                        <div className="flex justify-between items-center">
+                          <span className="px-4 py-2 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-xl font-bold text-sm">
+                            Question {cityQuizIndex + 1} / {CITY_QUESTIONS.length}
+                          </span>
+                        </div>
+
+                        <h4 className={cn("text-xl md:text-2xl font-black leading-tight", isDarkMode ? "text-white" : "text-slate-900")}>
+                          {currentCityQuiz.question[i18n.language as 'uz' | 'ru' | 'en']}
+                        </h4>
+
+                        <div className="grid grid-cols-1 gap-4">
+                          {currentCityQuiz.options[i18n.language as 'uz' | 'ru' | 'en'].map((option, idx) => (
+                            <button
+                              key={idx}
+                              onClick={() => handleCityQuizAnswer(idx)}
+                              disabled={!!cityQuizFeedback}
+                              className={cn(
+                                "p-5 rounded-2xl text-left font-bold transition-all border-2 cursor-pointer",
+                                cityQuizFeedback 
+                                  ? idx === currentCityQuiz.correct
+                                    ? "bg-emerald-50 border-emerald-500 text-emerald-700"
+                                    : cityQuizFeedback.isCorrect === false && idx === currentCityQuiz.correct
+                                      ? "bg-emerald-50 border-emerald-500 text-emerald-700"
+                                      : "bg-slate-50 border-slate-200 text-slate-400 opacity-50"
+                                  : isDarkMode
+                                    ? "bg-slate-800 border-slate-700 text-white hover:border-indigo-500"
+                                    : "bg-white border-slate-100 text-slate-700 hover:border-indigo-500 shadow-sm"
+                              )}
+                            >
+                              {option}
+                            </button>
+                          ))}
+                        </div>
+
+                        {cityQuizFeedback && (
+                          <motion.div 
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            className={cn(
+                              "p-6 rounded-2xl font-bold text-center",
+                              cityQuizFeedback.isCorrect ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"
+                            )}
+                          >
+                            <p className="mb-4">{cityQuizFeedback.message}</p>
+                            <button 
+                              onClick={nextCityQuiz}
+                              className="px-8 py-3 bg-white rounded-xl shadow-sm hover:shadow-md transition-all cursor-pointer"
+                            >
+                              {t('next_question')}
+                            </button>
+                          </motion.div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="text-center py-10 space-y-8">
+                        <div className="w-24 h-24 bg-indigo-100 dark:bg-indigo-900/30 rounded-full flex items-center justify-center mx-auto mb-6">
+                          <Sparkles className="w-12 h-12 text-indigo-600" />
+                        </div>
+                        <h4 className={cn("text-3xl font-black", isDarkMode ? "text-white" : "text-slate-900")}>Quiz Completed!</h4>
+                        <div className="flex justify-center gap-12">
+                          <div>
+                            <p className="text-slate-400 font-bold uppercase text-xs mb-1">Correct</p>
+                            <p className="text-4xl font-black text-emerald-500">{cityQuizStats.correct}</p>
+                          </div>
+                          <div>
+                            <p className="text-slate-400 font-bold uppercase text-xs mb-1">Incorrect</p>
+                            <p className="text-4xl font-black text-rose-500">{cityQuizStats.incorrect}</p>
+                          </div>
+                        </div>
+                        <button 
+                          onClick={resetCityQuiz}
+                          className="px-10 py-4 bg-indigo-600 text-white font-black rounded-2xl hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200 cursor-pointer"
+                        >
+                          Try Again
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <QuizDashboard 
+                  stats={cityQuizStats}
+                  isDarkMode={isDarkMode}
+                />
+              </div>
+            )}
+
+            {/* Weather Quiz View */}
             {activeTab === 'quest' && (
               <div className="space-y-12">
                 <div className="max-w-2xl mx-auto">
@@ -1397,86 +2003,214 @@ export default function App() {
                   )}>
                     <div className="flex items-center gap-3 mb-8">
                       <Gamepad2 className="w-8 h-8 text-indigo-600" />
-                      <h3 className="text-3xl font-black">{t('quest_title')}</h3>
+                      <h3 className="text-3xl font-black">{t('weather_quest')}</h3>
                     </div>
 
-                    {quiz ? (
+                    {!showWeatherQuizResult ? (
                       <div className="space-y-8">
-                        <p className={cn("text-xl font-bold leading-relaxed", isDarkMode ? "text-slate-200" : "text-slate-800")}>
-                          {quiz.question[i18n.language as 'uz' | 'ru' | 'en']}
-                        </p>
-                        
+                        <div className="flex justify-between items-center">
+                          <span className="px-4 py-2 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-xl font-bold text-sm">
+                            Question {weatherQuizIndex + 1} / {WEATHER_QUESTIONS.length}
+                          </span>
+                        </div>
+
+                        <h4 className={cn("text-xl md:text-2xl font-black leading-tight", isDarkMode ? "text-white" : "text-slate-900")}>
+                          {currentWeatherQuiz.question[i18n.language as 'uz' | 'ru' | 'en']}
+                        </h4>
+
                         <div className="grid grid-cols-1 gap-4">
-                          {quiz.options[i18n.language as 'uz' | 'ru' | 'en'].map((opt: string, i: number) => (
+                          {currentWeatherQuiz.options[i18n.language as 'uz' | 'ru' | 'en'].map((option, idx) => (
                             <button
-                              key={i}
-                              disabled={isAnswered}
-                              onClick={() => setSelectedOption(i)}
+                              key={idx}
+                              onClick={() => handleWeatherQuizAnswer(idx)}
+                              disabled={!!weatherQuizFeedback}
                               className={cn(
-                                "p-5 rounded-2xl border-2 text-left font-bold transition-all flex justify-between items-center group",
-                                selectedOption === i 
-                                  ? "border-indigo-600 bg-indigo-50 text-indigo-700 dark:bg-indigo-900/20 dark:text-indigo-300" 
-                                  : isDarkMode 
-                                    ? "border-slate-800 hover:border-slate-700 text-slate-400"
-                                    : "border-slate-100 hover:border-slate-200 text-slate-600",
-                                isAnswered && i === quiz.correct && "border-emerald-500 bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300",
-                                isAnswered && selectedOption === i && i !== quiz.correct && "border-red-500 bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-300"
+                                "p-5 rounded-2xl text-left font-bold transition-all border-2 cursor-pointer",
+                                weatherQuizFeedback 
+                                  ? idx === currentWeatherQuiz.correct
+                                    ? "bg-emerald-50 border-emerald-500 text-emerald-700"
+                                    : weatherQuizFeedback.isCorrect === false && idx === currentWeatherQuiz.correct
+                                      ? "bg-emerald-50 border-emerald-500 text-emerald-700"
+                                      : "bg-slate-50 border-slate-200 text-slate-400 opacity-50"
+                                  : isDarkMode
+                                    ? "bg-slate-800 border-slate-700 text-white hover:border-indigo-500"
+                                    : "bg-white border-slate-100 text-slate-700 hover:border-indigo-500 shadow-sm"
                               )}
                             >
-                              <span>{opt}</span>
-                              {isAnswered && i === quiz.correct && <CheckCircle2 className="w-6 h-6 text-emerald-500" />}
-                              {isAnswered && selectedOption === i && i !== quiz.correct && <XCircle className="w-6 h-6 text-red-500" />}
+                              {option}
                             </button>
                           ))}
                         </div>
 
-                        {isAnswered ? (
-                          <div className="pt-6 border-t border-slate-100 dark:border-slate-800 flex flex-col items-center gap-6">
-                            <div className={cn(
-                              "text-2xl font-black flex items-center gap-2",
-                              isCorrect ? "text-emerald-600" : "text-red-600"
-                            )}>
-                              {isCorrect ? <CheckCircle2 /> : <XCircle />}
-                              {isCorrect ? t('correct') : t('incorrect')}
-                            </div>
-                            {!isCorrect && (
-                              <p className="font-bold text-slate-500">{t('correct_was')} <span className="text-emerald-600">{quiz.options[i18n.language as 'uz' | 'ru' | 'en'][quiz.correct]}</span></p>
+                        {weatherQuizFeedback && (
+                          <motion.div 
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            className={cn(
+                              "p-6 rounded-2xl font-bold text-center",
+                              weatherQuizFeedback.isCorrect ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"
                             )}
+                          >
+                            <p className="mb-4">{weatherQuizFeedback.message}</p>
                             <button 
-                              onClick={() => fetchQuiz(true)}
-                              className="w-full py-4 bg-indigo-600 text-white font-black rounded-2xl hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200"
+                              onClick={nextWeatherQuiz}
+                              className="px-8 py-3 bg-white rounded-xl shadow-sm hover:shadow-md transition-all cursor-pointer"
                             >
                               {t('next_question')}
                             </button>
-                          </div>
-                        ) : (
-                          <button 
-                            disabled={selectedOption === null}
-                            onClick={handleQuizSubmit}
-                            className={cn(
-                              "w-full py-4 font-black rounded-2xl transition-all disabled:opacity-50",
-                              isDarkMode ? "bg-white text-slate-900 hover:bg-slate-100" : "bg-slate-900 text-white hover:bg-black"
-                            )}
-                          >
-                            {t('submit_answer')}
-                          </button>
+                          </motion.div>
                         )}
                       </div>
                     ) : (
-                      <div className="flex flex-col items-center py-20">
-                        <Loader2 className="w-12 h-12 animate-spin text-indigo-600 mb-4" />
-                        <p className="font-bold text-slate-400">Loading Quest...</p>
+                      <div className="text-center py-10 space-y-8">
+                        <div className="w-24 h-24 bg-indigo-100 dark:bg-indigo-900/30 rounded-full flex items-center justify-center mx-auto mb-6">
+                          <Sparkles className="w-12 h-12 text-indigo-600" />
+                        </div>
+                        <h4 className={cn("text-3xl font-black", isDarkMode ? "text-white" : "text-slate-900")}>Quiz Completed!</h4>
+                        <div className="flex justify-center gap-12">
+                          <div>
+                            <p className="text-slate-400 font-bold uppercase text-xs mb-1">Correct</p>
+                            <p className="text-4xl font-black text-emerald-500">{quizStats.correct}</p>
+                          </div>
+                          <div>
+                            <p className="text-slate-400 font-bold uppercase text-xs mb-1">Incorrect</p>
+                            <p className="text-4xl font-black text-rose-500">{quizStats.incorrect}</p>
+                          </div>
+                        </div>
+                        <button 
+                          onClick={resetWeatherQuiz}
+                          className="px-10 py-4 bg-indigo-600 text-white font-black rounded-2xl hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200 cursor-pointer"
+                        >
+                          Try Again
+                        </button>
                       </div>
                     )}
                   </div>
                 </div>
 
-                <div className="max-w-4xl mx-auto">
-                  <div className="flex items-center gap-3 mb-8">
-                    <LayoutDashboard className="w-6 h-6 text-indigo-600" />
-                    <h3 className="text-2xl font-black">{t('quiz_dashboard')}</h3>
+                <QuizDashboard 
+                  stats={quizStats}
+                  isDarkMode={isDarkMode}
+                />
+              </div>
+            )}
+
+            {/* Feedback View */}
+            {activeTab === 'feedback' && (
+              <div className="max-w-2xl mx-auto">
+                <div className={cn(
+                  "p-10 rounded-[40px] border shadow-xl transition-all",
+                  isDarkMode ? "bg-slate-900 border-slate-800 shadow-slate-950/50" : "bg-white border-slate-200 shadow-slate-200/50"
+                )}>
+                  <div className="flex items-center gap-4 mb-8">
+                    <div className="w-12 h-12 bg-indigo-600 rounded-2xl flex items-center justify-center text-white">
+                      <MessageSquare className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <h2 className={cn("text-2xl font-black", isDarkMode ? "text-white" : "text-slate-900")}>{t('feedback')}</h2>
+                      <p className="text-slate-500 font-medium">{t('feedback_desc')}</p>
+                    </div>
                   </div>
-                  <QuizDashboard stats={quizStats} isDarkMode={isDarkMode} />
+
+                  {feedbackStatus === 'success' ? (
+                    <motion.div 
+                      initial={{ opacity: 0, scale: 0.9 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      className="text-center py-12 space-y-6"
+                    >
+                      <div className="w-20 h-20 bg-emerald-100 dark:bg-emerald-900/30 rounded-full flex items-center justify-center mx-auto">
+                        <CheckCircle2 className="w-10 h-10 text-emerald-600" />
+                      </div>
+                      <h3 className={cn("text-2xl font-black", isDarkMode ? "text-white" : "text-slate-900")}>{t('feedback_success')}</h3>
+                      <button 
+                        onClick={() => setFeedbackStatus('idle')}
+                        className="text-indigo-600 font-bold hover:underline cursor-pointer"
+                      >
+                        Send another message
+                      </button>
+                    </motion.div>
+                  ) : (
+                    <form 
+                      action="https://formspree.io/f/xwvrpvoj" 
+                      method="POST"
+                      onSubmit={async (e) => {
+                        e.preventDefault();
+                        setFeedbackStatus('loading');
+                        const form = e.target as HTMLFormElement;
+                        const data = new FormData(form);
+                        try {
+                          const response = await fetch(form.action, {
+                            method: form.method,
+                            body: data,
+                            headers: { 'Accept': 'application/json' }
+                          });
+                          if (response.ok) {
+                            setFeedbackStatus('success');
+                            form.reset();
+                          } else {
+                            setFeedbackStatus('error');
+                          }
+                        } catch (err) {
+                          setFeedbackStatus('error');
+                        }
+                      }}
+                      className="space-y-6"
+                    >
+                      <div className="space-y-2">
+                        <label className={cn("text-sm font-bold uppercase tracking-widest", isDarkMode ? "text-slate-400" : "text-slate-500")}>{t('feedback_name')}</label>
+                        <input 
+                          type="text" 
+                          name="name" 
+                          required
+                          placeholder={t('feedback_name')}
+                          className={cn(
+                            "w-full p-4 rounded-2xl border outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all",
+                            isDarkMode ? "bg-slate-800 border-slate-700 text-white" : "bg-slate-50 border-slate-200 text-slate-900"
+                          )}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className={cn("text-sm font-bold uppercase tracking-widest", isDarkMode ? "text-slate-400" : "text-slate-500")}>{t('feedback_email')}</label>
+                        <input 
+                          type="email" 
+                          name="email" 
+                          required
+                          placeholder={t('feedback_email')}
+                          className={cn(
+                            "w-full p-4 rounded-2xl border outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all",
+                            isDarkMode ? "bg-slate-800 border-slate-700 text-white" : "bg-slate-50 border-slate-200 text-slate-900"
+                          )}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className={cn("text-sm font-bold uppercase tracking-widest", isDarkMode ? "text-slate-400" : "text-slate-500")}>{t('feedback_message')}</label>
+                        <textarea 
+                          name="message" 
+                          required
+                          rows={5}
+                          placeholder={t('feedback_message')}
+                          className={cn(
+                            "w-full p-4 rounded-2xl border outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all resize-none",
+                            isDarkMode ? "bg-slate-800 border-slate-700 text-white" : "bg-slate-50 border-slate-200 text-slate-900"
+                          )}
+                        ></textarea>
+                      </div>
+                      {feedbackStatus === 'error' && (
+                        <p className="text-rose-500 text-sm font-bold flex items-center gap-2">
+                          <AlertCircle className="w-4 h-4" />
+                          Something went wrong. Please try again.
+                        </p>
+                      )}
+                      <button 
+                        type="submit"
+                        disabled={feedbackStatus === 'loading'}
+                        className="w-full py-5 bg-indigo-600 text-white font-black rounded-2xl hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200 disabled:opacity-50 flex items-center justify-center gap-3 cursor-pointer"
+                      >
+                        {feedbackStatus === 'loading' && <Loader2 className="animate-spin" />}
+                        {t('feedback_submit')}
+                      </button>
+                    </form>
+                  )}
                 </div>
               </div>
             )}
@@ -1500,10 +2234,10 @@ export default function App() {
                       </p>
                     </div>
 
-                    <div className="flex items-center justify-between p-6 bg-slate-50 dark:bg-slate-800 rounded-3xl">
+                    <div className="flex items-center justify-between p-6 bg-slate-50 dark:bg-slate-900/50 border border-transparent dark:border-slate-800 rounded-3xl">
                       <div className="flex-1 pr-4">
                         <h4 className="font-bold text-lg">{t('enable_notifications')}</h4>
-                        <p className="text-sm text-slate-500">{t('bot_desc')}</p>
+                        <p className="text-sm text-slate-500">{t('notification_instruction')}</p>
                       </div>
                       <button 
                         onClick={toggleNotifications}
@@ -1567,45 +2301,85 @@ export default function App() {
 
             {/* Upcoming Updates View */}
             {activeTab === 'upcoming' && (
-              <div className="max-w-4xl mx-auto space-y-8">
+              <div className="max-w-4xl mx-auto space-y-12 pb-20">
                 <div className="text-center mb-12">
-                  <h3 className="text-4xl font-black mb-4">{t('upcoming_title')}</h3>
+                  <h3 className={cn("text-4xl font-black mb-4", isDarkMode ? "text-white" : "text-slate-900")}>{t('upcoming_title')}</h3>
                   <div className="w-20 h-1.5 bg-indigo-600 mx-auto rounded-full"></div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                  <div className="bg-white p-10 rounded-[40px] border border-slate-200 hover:border-indigo-300 transition-all group relative overflow-hidden">
-                    <div className="absolute top-0 right-0 p-4">
-                      <div className="px-3 py-1 bg-emerald-100 text-emerald-700 text-xs font-bold rounded-full animate-pulse">
-                        LIVE
-                      </div>
-                    </div>
-                    <div className="w-16 h-16 bg-indigo-50 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
+                  {/* CityQuest Active Card (Auto-hide logic) */}
+                  {(() => {
+                    const releaseDate = new Date('2026-03-06T12:00:00');
+                    const now = new Date();
+                    const diffHours = (now.getTime() - releaseDate.getTime()) / (1000 * 60 * 60);
+                    if (diffHours < 48) {
+                      return (
+                        <div className={cn(
+                          "p-10 rounded-[40px] border transition-all group relative overflow-hidden",
+                          isDarkMode ? "bg-emerald-900/10 border-emerald-500/30" : "bg-emerald-50 border-emerald-200 shadow-sm"
+                        )}>
+                          <div className="absolute top-4 right-4 px-3 py-1 bg-emerald-500 text-white text-[10px] font-black rounded-full uppercase tracking-widest animate-pulse">
+                            Active
+                          </div>
+                          <div className="w-16 h-16 bg-emerald-500 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform text-white">
+                            <Globe2 className="w-8 h-8" />
+                          </div>
+                          <h4 className={cn("text-2xl font-black mb-4", isDarkMode ? "text-white" : "text-slate-900")}>CityQuest</h4>
+                          <p className="text-slate-500 leading-relaxed font-medium">{t('cityquiz_desc')}</p>
+                          <button 
+                            onClick={() => setActiveTab('cityquiz')}
+                            className="mt-8 flex items-center gap-2 text-emerald-600 font-bold hover:underline cursor-pointer"
+                          >
+                            Play Now <ArrowRight className="w-4 h-4" />
+                          </button>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
+
+                  <div className={cn(
+                    "p-10 rounded-[40px] border transition-all group",
+                    isDarkMode ? "bg-slate-900 border-slate-800 hover:border-indigo-500/50" : "bg-white border-slate-200 hover:border-indigo-300 shadow-sm"
+                  )}>
+                    <div className="w-16 h-16 bg-indigo-50 dark:bg-indigo-900/20 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
                       <Send className="w-8 h-8 text-indigo-600" />
                     </div>
-                    <h4 className="text-2xl font-black mb-4">Telegram Bot</h4>
-                    <p className="text-slate-500 leading-relaxed font-medium">{t('bot_desc')}</p>
-                    <div className="mt-8 flex flex-col gap-4">
-                      <a 
-                        href="https://t.me/weather_system_bot" 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center justify-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200"
-                      >
-                        <Send className="w-5 h-5" />
-                        @weather_system_bot
-                      </a>
+                    <h4 className={cn("text-2xl font-black mb-4", isDarkMode ? "text-white" : "text-slate-900")}>{t('upcoming_update_1_title')}</h4>
+                    <p className="text-slate-500 leading-relaxed font-medium">{t('upcoming_update_1_desc')}</p>
+                    <div className="mt-8 flex items-center gap-2 text-slate-400 font-bold">
+                      <Clock className="w-4 h-4" />
+                      Coming Soon
                     </div>
                   </div>
 
-                  <div className="bg-white p-10 rounded-[40px] border border-slate-200 hover:border-emerald-300 transition-all group">
-                    <div className="w-16 h-16 bg-emerald-50 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
-                      <Gamepad2 className="w-8 h-8 text-emerald-600" />
+                  <div className={cn(
+                    "p-10 rounded-[40px] border transition-all group",
+                    isDarkMode ? "bg-slate-900 border-slate-800 hover:border-amber-500/50" : "bg-white border-slate-200 hover:border-amber-300 shadow-sm"
+                  )}>
+                    <div className="w-16 h-16 bg-amber-50 dark:bg-amber-900/20 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
+                      <AlertCircle className="w-8 h-8 text-amber-600" />
                     </div>
-                    <h4 className="text-2xl font-black mb-4">CityQuest</h4>
-                    <p className="text-slate-500 leading-relaxed font-medium">{t('cityquest_desc')}</p>
-                    <div className="mt-8 flex items-center gap-2 text-emerald-600 font-bold">
-                      <span className="w-2 h-2 bg-emerald-600 rounded-full animate-pulse"></span>
+                    <h4 className={cn("text-2xl font-black mb-4", isDarkMode ? "text-white" : "text-slate-900")}>{t('upcoming_update_2_title')}</h4>
+                    <p className="text-slate-500 leading-relaxed font-medium">{t('upcoming_update_2_desc')}</p>
+                    <div className="mt-8 flex items-center gap-2 text-slate-400 font-bold">
+                      <Clock className="w-4 h-4" />
+                      Coming Soon
+                    </div>
+                  </div>
+
+                  <div className={cn(
+                    "p-10 rounded-[40px] border transition-all group",
+                    isDarkMode ? "bg-slate-900 border-slate-800 hover:border-violet-500/50" : "bg-white border-slate-200 hover:border-violet-300 shadow-sm"
+                  )}>
+                    <div className="w-16 h-16 bg-violet-50 dark:bg-violet-900/20 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
+                      <Download className="w-8 h-8 text-violet-600" />
+                    </div>
+                    <h4 className={cn("text-2xl font-black mb-4", isDarkMode ? "text-white" : "text-slate-900")}>{t('upcoming_update_3_title')}</h4>
+                    <p className="text-slate-500 leading-relaxed font-medium">{t('upcoming_update_3_desc')}</p>
+                    <div className="mt-8 flex items-center gap-2 text-slate-400 font-bold">
+                      <Clock className="w-4 h-4" />
                       Coming Soon
                     </div>
                   </div>
@@ -1716,23 +2490,29 @@ export default function App() {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {worldClocks.map((city, i) => (
-                    <div key={i} className="bg-white p-8 rounded-[40px] border border-slate-200 hover:border-indigo-300 transition-all group relative overflow-hidden">
+                    <div key={i} className={cn(
+                      "p-8 rounded-[40px] border transition-all group relative overflow-hidden",
+                      isDarkMode ? "bg-slate-900 border-slate-800 hover:border-indigo-500/50" : "bg-white border-slate-200 hover:border-indigo-300"
+                    )}>
                       <div className="relative z-10">
                         <div className="flex justify-between items-start mb-6">
                           <div>
-                            <h4 className="text-xl font-bold text-slate-900">{city.name}</h4>
+                            <h4 className={cn("text-xl font-bold", isDarkMode ? "text-white" : "text-slate-900")}>{city.name}</h4>
                             <p className="text-slate-400 text-xs font-bold uppercase tracking-widest">{city.tz}</p>
                           </div>
                           <Clock className="w-6 h-6 text-indigo-600" />
                         </div>
-                        <div className="text-5xl font-black text-slate-900 mb-2">
+                        <div className={cn("text-5xl font-black mb-2", isDarkMode ? "text-white" : "text-slate-900")}>
                           {formatInTimeZone(currentTime, city.tz, 'HH:mm:ss')}
                         </div>
                         <p className="text-slate-500 font-medium">
                           {getTranslatedDate(new Date(currentTime.toLocaleString('en-US', { timeZone: city.tz })))}
                         </p>
                       </div>
-                      <div className="absolute -bottom-4 -right-4 w-24 h-24 bg-indigo-50 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                      <div className={cn(
+                        "absolute -bottom-4 -right-4 w-24 h-24 rounded-full opacity-0 group-hover:opacity-100 transition-opacity",
+                        isDarkMode ? "bg-indigo-900/20" : "bg-indigo-50"
+                      )}></div>
                     </div>
                   ))}
                 </div>
@@ -1756,36 +2536,36 @@ export default function App() {
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                  <div className="bg-white p-8 rounded-3xl border border-slate-200 hover:border-indigo-200 transition-all">
+                  <div className={cn("p-8 rounded-3xl border transition-all", isDarkMode ? "bg-slate-900 border-slate-800 hover:border-indigo-500/50" : "bg-white border-slate-200 hover:border-indigo-200")}>
                     <Briefcase className="w-8 h-8 text-indigo-600 mb-6" />
-                    <h4 className="text-lg font-bold mb-3">{t('work')}</h4>
-                    <p className="text-slate-600 text-sm leading-relaxed">{insight.work}</p>
+                    <h4 className={cn("text-lg font-bold mb-3", isDarkMode ? "text-white" : "text-slate-900")}>{t('work')}</h4>
+                    <p className="text-slate-500 text-sm leading-relaxed">{insight.work}</p>
                   </div>
-                  <div className="bg-white p-8 rounded-3xl border border-slate-200 hover:border-indigo-200 transition-all">
+                  <div className={cn("p-8 rounded-3xl border transition-all", isDarkMode ? "bg-slate-900 border-slate-800 hover:border-violet-500/50" : "bg-white border-slate-200 hover:border-indigo-200")}>
                     <GraduationCap className="w-8 h-8 text-violet-600 mb-6" />
-                    <h4 className="text-lg font-bold mb-3">{t('study')}</h4>
-                    <p className="text-slate-600 text-sm leading-relaxed">{insight.study}</p>
+                    <h4 className={cn("text-lg font-bold mb-3", isDarkMode ? "text-white" : "text-slate-900")}>{t('study')}</h4>
+                    <p className="text-slate-500 text-sm leading-relaxed">{insight.study}</p>
                   </div>
-                  <div className="bg-white p-8 rounded-3xl border border-slate-200 hover:border-indigo-200 transition-all">
+                  <div className={cn("p-8 rounded-3xl border transition-all", isDarkMode ? "bg-slate-900 border-slate-800 hover:border-emerald-500/50" : "bg-white border-slate-200 hover:border-indigo-200")}>
                     <Home className="w-8 h-8 text-emerald-600 mb-6" />
-                    <h4 className="text-lg font-bold mb-3">{t('live')}</h4>
-                    <p className="text-slate-600 text-sm leading-relaxed">{insight.live}</p>
+                    <h4 className={cn("text-lg font-bold mb-3", isDarkMode ? "text-white" : "text-slate-900")}>{t('live')}</h4>
+                    <p className="text-slate-500 text-sm leading-relaxed">{insight.live}</p>
                   </div>
-                  <div className="bg-white p-8 rounded-3xl border border-slate-200 hover:border-indigo-200 transition-all">
+                  <div className={cn("p-8 rounded-3xl border transition-all", isDarkMode ? "bg-slate-900 border-slate-800 hover:border-orange-500/50" : "bg-white border-slate-200 hover:border-indigo-200")}>
                     <Compass className="w-8 h-8 text-orange-600 mb-6" />
-                    <h4 className="text-lg font-bold mb-3">{t('travel')}</h4>
-                    <p className="text-slate-600 text-sm leading-relaxed">{insight.travel}</p>
+                    <h4 className={cn("text-lg font-bold mb-3", isDarkMode ? "text-white" : "text-slate-900")}>{t('travel')}</h4>
+                    <p className="text-slate-500 text-sm leading-relaxed">{insight.travel}</p>
                   </div>
                 </div>
 
-                <div className="bg-white p-10 rounded-[40px] border border-slate-200">
+                <div className={cn("p-10 rounded-[40px] border transition-all", isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200")}>
                   <div className="flex items-center gap-3 mb-8">
                     <Camera className="w-6 h-6 text-indigo-600" />
-                    <h3 className="text-2xl font-black">{t('photos')}</h3>
+                    <h3 className={cn("text-2xl font-black", isDarkMode ? "text-white" : "text-slate-900")}>{t('photos')}</h3>
                   </div>
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
                       {insight?.images?.map((kw, i) => (
-                        <div key={i} className="aspect-square rounded-3xl overflow-hidden bg-slate-100">
+                        <div key={i} className={cn("aspect-square rounded-3xl overflow-hidden", isDarkMode ? "bg-slate-800" : "bg-slate-100")}>
                           <img 
                             src={`https://picsum.photos/seed/${kw}/800/800`} 
                             alt={kw}
@@ -1800,19 +2580,19 @@ export default function App() {
                   {/* New Features v3.8.2 */}
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
                     {/* Cuisine */}
-                    <div className="bg-white p-10 rounded-[40px] border border-slate-200">
+                    <div className={cn("p-10 rounded-[40px] border transition-all", isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200")}>
                       <div className="flex items-center gap-3 mb-8">
                         <Droplets className="w-6 h-6 text-indigo-600" />
-                        <h3 className="text-2xl font-black">{t('cuisine')}</h3>
+                        <h3 className={cn("text-2xl font-black", isDarkMode ? "text-white" : "text-slate-900")}>{t('cuisine')}</h3>
                       </div>
                       <div className="space-y-6">
                         {insight?.cuisine?.map((dish, i) => (
                           <div key={i} className="flex gap-4">
-                            <div className="w-12 h-12 bg-indigo-50 rounded-xl flex items-center justify-center font-bold text-indigo-600 shrink-0">
+                            <div className={cn("w-12 h-12 rounded-xl flex items-center justify-center font-bold shrink-0", isDarkMode ? "bg-slate-800 text-indigo-400" : "bg-indigo-50 text-indigo-600")}>
                               {i + 1}
                             </div>
                             <div>
-                              <h5 className="font-bold text-slate-900">{dish.name}</h5>
+                              <h5 className={cn("font-bold", isDarkMode ? "text-white" : "text-slate-900")}>{dish.name}</h5>
                               <p className="text-sm text-slate-500 leading-relaxed">{dish.description}</p>
                             </div>
                           </div>
@@ -1822,7 +2602,10 @@ export default function App() {
 
                     {/* Packing List & Safety */}
                     <div className="space-y-6">
-                      <div className="bg-indigo-600 p-10 rounded-[40px] text-white">
+                      <div className={cn(
+                        "bg-indigo-600 p-10 rounded-[40px] text-white",
+                        isDarkMode ? "" : "shadow-xl shadow-indigo-500/10"
+                      )}>
                         <div className="flex items-center gap-3 mb-6">
                           <Briefcase className="w-6 h-6 text-indigo-200" />
                           <h3 className="text-2xl font-black">{t('packing_list')}</h3>
@@ -1837,12 +2620,12 @@ export default function App() {
                         </ul>
                       </div>
 
-                      <div className="bg-white p-10 rounded-[40px] border border-slate-200">
+                      <div className={cn("p-10 rounded-[40px] border transition-all", isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200")}>
                         <div className="flex items-center gap-3 mb-6">
                           <AlertCircle className="w-6 h-6 text-emerald-600" />
-                          <h3 className="text-2xl font-black">{t('safety')}</h3>
+                          <h3 className={cn("text-2xl font-black", isDarkMode ? "text-white" : "text-slate-900")}>{t('safety')}</h3>
                         </div>
-                        <p className="text-slate-600 leading-relaxed">{insight?.safety}</p>
+                        <p className="text-slate-500 leading-relaxed">{insight?.safety}</p>
                       </div>
                     </div>
                   </div>
@@ -1853,10 +2636,13 @@ export default function App() {
             {activeTab === 'flights' && (
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
                 <div className="lg:col-span-1 space-y-8">
-                  <div className="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm">
-                    <h3 className="text-2xl font-black mb-6">{t('survey_title')}</h3>
-                    <div className="p-4 bg-amber-50 border border-amber-100 rounded-2xl mb-6">
-                      <p className="text-sm text-amber-700 font-medium flex items-start gap-2">
+                  <div className={cn(
+                    "p-8 rounded-3xl border shadow-sm transition-all",
+                    isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"
+                  )}>
+                    <h3 className={cn("text-2xl font-black mb-6", isDarkMode ? "text-white" : "text-slate-900")}>{t('survey_title')}</h3>
+                    <div className="p-4 bg-amber-50 dark:bg-amber-900/10 border border-amber-100 dark:border-amber-900/20 rounded-2xl mb-6">
+                      <p className="text-sm text-amber-700 dark:text-amber-400 font-medium flex items-start gap-2">
                         <AlertCircle className="w-5 h-5 shrink-0" />
                         {t('flight_disclaimer')}
                       </p>
@@ -1864,7 +2650,7 @@ export default function App() {
                         href="https://www.skyscanner.net" 
                         target="_blank" 
                         rel="noopener noreferrer"
-                        className="mt-3 inline-flex items-center gap-2 text-xs font-bold text-indigo-600 hover:underline"
+                        className="mt-3 inline-flex items-center gap-2 text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline"
                       >
                         <ExternalLink className="w-3 h-3" />
                         {t('check_official')}
@@ -1877,8 +2663,11 @@ export default function App() {
                           type="text" 
                           value={survey.from}
                           onChange={(e) => setSurvey({...survey, from: e.target.value})}
-                          placeholder="e.g. Tashkent"
-                          className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                          placeholder={t('where_from')}
+                          className={cn(
+                            "w-full p-4 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all border",
+                            isDarkMode ? "bg-slate-800 border-slate-700 text-white" : "bg-slate-50 border-slate-200"
+                          )}
                         />
                       </div>
                       <div>
@@ -1887,8 +2676,11 @@ export default function App() {
                           type="text" 
                           value={survey.to}
                           onChange={(e) => setSurvey({...survey, to: e.target.value})}
-                          placeholder="e.g. London"
-                          className="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                          placeholder={t('where_to')}
+                          className={cn(
+                            "w-full p-4 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all border",
+                            isDarkMode ? "bg-slate-800 border-slate-700 text-white" : "bg-slate-50 border-slate-200"
+                          )}
                         />
                       </div>
                       <button 
@@ -1901,10 +2693,13 @@ export default function App() {
                     </div>
                   </div>
 
-                  <div className="bg-indigo-50 p-8 rounded-3xl border border-indigo-100">
+                  <div className={cn(
+                    "p-8 rounded-3xl border transition-all",
+                    isDarkMode ? "bg-indigo-900/20 border-indigo-500/20" : "bg-indigo-50 border-indigo-100"
+                  )}>
                     <AlertCircle className="w-6 h-6 text-indigo-600 mb-4" />
-                    <p className="text-indigo-900 font-bold mb-2">Travel Tip</p>
-                    <p className="text-indigo-700 text-sm leading-relaxed">Booking your flight at least 3 weeks in advance can save you up to 20% on ticket prices.</p>
+                    <p className={cn("font-bold mb-2", isDarkMode ? "text-indigo-300" : "text-indigo-900")}>Travel Tip</p>
+                    <p className={cn("text-sm leading-relaxed", isDarkMode ? "text-indigo-400" : "text-indigo-700")}>Booking your flight at least 3 weeks in advance can save you up to 20% on ticket prices.</p>
                   </div>
                 </div>
 
@@ -1916,34 +2711,48 @@ export default function App() {
                         initial={{ opacity: 0, x: 20 }}
                         animate={{ opacity: 1, x: 0 }}
                         transition={{ delay: i * 0.1 }}
-                        className="bg-white p-8 rounded-3xl border border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-8 hover:shadow-xl hover:shadow-slate-200/50 transition-all"
+                        className={cn(
+                          "p-8 rounded-3xl border flex flex-col sm:flex-row items-center justify-between gap-8 transition-all",
+                          isDarkMode 
+                            ? "bg-slate-900 border-slate-800 hover:border-indigo-500/50" 
+                            : "bg-white border-slate-200 hover:shadow-xl hover:shadow-slate-200/50"
+                        )}
                       >
                         <div className="flex items-center gap-6">
-                          <div className="w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center">
+                          <div className={cn(
+                            "w-16 h-16 rounded-2xl flex items-center justify-center",
+                            isDarkMode ? "bg-slate-800" : "bg-slate-50"
+                          )}>
                             <Plane className="w-8 h-8 text-indigo-600" />
                           </div>
                           <div>
-                            <h4 className="text-xl font-bold text-slate-900">{flight.airline}</h4>
+                            <h4 className={cn("text-xl font-bold", isDarkMode ? "text-white" : "text-slate-900")}>{flight.airline}</h4>
                             <p className="text-slate-500 font-medium">{flight.from} → {flight.to}</p>
                           </div>
                         </div>
                         <div className="flex items-center gap-10">
                           <div className="text-center">
                             <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">{t('flight_duration')}</p>
-                            <p className="font-bold text-slate-900">{flight.duration}</p>
+                            <p className={cn("font-bold", isDarkMode ? "text-white" : "text-slate-900")}>{flight.duration}</p>
                           </div>
                           <div className="text-right">
                             <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">{t('flight_price')}</p>
                             <p className="text-2xl font-black text-indigo-600">${flight.price}</p>
                           </div>
-                          <button className="p-3 bg-slate-100 rounded-xl hover:bg-indigo-600 hover:text-white transition-all">
+                          <button className={cn(
+                            "p-3 rounded-xl transition-all",
+                            isDarkMode ? "bg-slate-800 hover:bg-indigo-600 text-slate-400 hover:text-white" : "bg-slate-100 hover:bg-indigo-600 hover:text-white"
+                          )}>
                             <ChevronRight className="w-6 h-6" />
                           </button>
                         </div>
                       </motion.div>
                     ))
                   ) : (
-                    <div className="h-full flex flex-col items-center justify-center text-slate-400 py-20">
+                    <div className={cn(
+                      "h-full flex flex-col items-center justify-center text-center py-20 rounded-[40px] border-2 border-dashed",
+                      isDarkMode ? "border-slate-800 bg-slate-900/50 text-slate-600" : "border-slate-100 bg-slate-50/50 text-slate-400"
+                    )}>
                       <Plane className="w-16 h-16 mb-4 opacity-20" />
                       <p className="text-lg font-medium">{t('no_data')}</p>
                     </div>
@@ -1974,7 +2783,7 @@ export default function App() {
                 href="https://t.me/morv1uss" 
                 target="_blank" 
                 rel="noopener noreferrer"
-                className="text-[10px] md:text-xs font-bold text-indigo-600 hover:underline"
+                className="text-[10px] md:text-xs font-bold text-indigo-600 hover:text-indigo-500 cursor-pointer transition-colors"
               >
                 {t('author')}
               </a>
@@ -1982,7 +2791,7 @@ export default function App() {
                 href="https://t.me/Eshkhuvvatofff" 
                 target="_blank" 
                 rel="noopener noreferrer"
-                className="text-[10px] md:text-xs font-bold text-slate-500 hover:underline"
+                className="text-[10px] md:text-xs font-bold text-slate-500 hover:text-slate-400 cursor-pointer transition-colors"
               >
                 {t('admin')}
               </a>
@@ -1995,12 +2804,44 @@ export default function App() {
             </span>
             <span className="text-slate-300 hidden md:block">|</span>
             <div className="flex gap-4">
-              <Github className="w-4 h-4 text-slate-400 hover:text-indigo-600 cursor-pointer" />
-              <Twitter className="w-4 h-4 text-slate-400 hover:text-indigo-600 cursor-pointer" />
+              <a href="https://github.com/Maksudzhon" target="_blank" rel="noopener noreferrer">
+                <Github className="w-4 h-4 text-slate-400 hover:text-indigo-600 cursor-pointer" />
+              </a>
+              <a href="https://t.me/wsa_project" target="_blank" rel="noopener noreferrer">
+                <SendHorizontal className="w-4 h-4 text-slate-400 hover:text-indigo-600 cursor-pointer" />
+              </a>
+              <a href="https://www.instagram.com/wsaofficialpage?igsh=MTZ3bGNsajJ2anhqYw==" target="_blank" rel="noopener noreferrer">
+                <Instagram className="w-4 h-4 text-slate-400 hover:text-indigo-600 cursor-pointer" />
+              </a>
             </div>
           </div>
         </div>
       </footer>
+      {/* Notifications Container */}
+      <div className="fixed top-24 right-6 z-[100] flex flex-col gap-3 pointer-events-none">
+        <AnimatePresence>
+          {notifications.map(n => (
+            <motion.div
+              key={n.id}
+              initial={{ opacity: 0, x: 50, scale: 0.9 }}
+              animate={{ opacity: 1, x: 0, scale: 1 }}
+              exit={{ opacity: 0, x: 20, scale: 0.9 }}
+              className={cn(
+                "px-6 py-4 rounded-2xl shadow-2xl border flex items-center gap-3 pointer-events-auto backdrop-blur-md",
+                isDarkMode ? "bg-slate-900/90 border-slate-800 text-white" : "bg-white/90 border-slate-200 text-slate-900"
+              )}
+            >
+              <div className={cn(
+                "w-8 h-8 rounded-full flex items-center justify-center",
+                n.type === 'success' ? "bg-emerald-500/20 text-emerald-500" : "bg-red-500/20 text-red-500"
+              )}>
+                {n.type === 'success' ? <CheckCircle2 className="w-5 h-5" /> : <XCircle className="w-5 h-5" />}
+              </div>
+              <span className="font-black text-sm">{n.message}</span>
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </div>
     </div>
   );
 }
