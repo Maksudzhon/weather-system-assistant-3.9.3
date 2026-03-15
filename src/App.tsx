@@ -10,6 +10,7 @@ import {
   Droplets, 
   Clock, 
   Globe, 
+  Calendar as CalendarIcon,
   DollarSign, 
   Plane, 
   Search, 
@@ -53,10 +54,11 @@ import {
   SunMedium,
   Globe2,
   MessageSquare,
-  SendHorizontal
+  SendHorizontal,
+  Users
 } from 'lucide-react';
 import axios from 'axios';
-import { format } from 'date-fns';
+import { format, startOfMonth, endOfMonth, eachDayOfInterval } from 'date-fns';
 import { formatInTimeZone } from 'date-fns-tz';
 import Markdown from 'react-markdown';
 import { 
@@ -81,7 +83,8 @@ import {
   generateWeatherInsight, 
   generateMarketInsight, 
   generateTravelPlan, 
-  generateOutfitRecommendation 
+  generateOutfitRecommendation,
+  generateCityInsight
 } from './services/geminiService';
 
 import { WEATHER_QUESTIONS, Question } from './data/questions';
@@ -420,7 +423,11 @@ export default function App() {
   const [flights, setFlights] = useState<FlightInfo[]>([]);
   const [loading, setLoading] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [isDarkMode, setIsDarkMode] = useState(() => localStorage.getItem('theme') === 'dark');
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+    const saved = localStorage.getItem('theme');
+    if (saved) return saved === 'dark';
+    return window.matchMedia('(prefers-color-scheme: dark)').matches;
+  });
   const [isNotificationsEnabled, setIsNotificationsEnabled] = useState(() => localStorage.getItem('notifications') === 'true');
   
   // New States for v3.9.2
@@ -431,6 +438,55 @@ export default function App() {
   const [travelPlan, setTravelPlan] = useState<string | null>(null);
   const [outfitRec, setOutfitRec] = useState<string | null>(null);
   const [feedbackStatus, setFeedbackStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
+  const [loadingProgress, setLoadingProgress] = useState(0);
+
+  useEffect(() => {
+    if (isInitialLoading) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = 'auto';
+    }
+    return () => {
+      document.body.style.overflow = 'auto';
+    };
+  }, [isInitialLoading]);
+
+  // Initial Loading Simulation
+  useEffect(() => {
+    const duration = Math.random() * 3000 + 5000; // 5-8 seconds
+    const interval = 50;
+    const steps = duration / interval;
+    const increment = 100 / steps;
+
+    const timer = setInterval(() => {
+      setLoadingProgress(prev => {
+        if (prev >= 100) {
+          clearInterval(timer);
+          setTimeout(() => setIsInitialLoading(false), 500);
+          return 100;
+        }
+        return Math.min(prev + increment, 100);
+      });
+    }, interval);
+
+    return () => clearInterval(timer);
+  }, []);
+
+  // Theme Sync with System
+  useEffect(() => {
+    if (!localStorage.getItem('theme')) {
+      const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+      const handleChange = (e: MediaQueryListEvent) => setIsDarkMode(e.matches);
+      mediaQuery.addEventListener('change', handleChange);
+      return () => mediaQuery.removeEventListener('change', handleChange);
+    }
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', isDarkMode);
+    localStorage.setItem('theme', isDarkMode ? 'dark' : 'light');
+  }, [isDarkMode]);
 
   // CityQuiz State
   const [cityQuizIndex, setCityQuizIndex] = useState(0);
@@ -584,6 +640,42 @@ export default function App() {
   const [clockSearch, setClockSearch] = useState('');
   const [isAddingClock, setIsAddingClock] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
+  const [calendarNotes, setCalendarNotes] = useState<Record<string, string>>(() => {
+    const saved = localStorage.getItem('calendar_notes');
+    return saved ? JSON.parse(saved) : {};
+  });
+
+  useEffect(() => {
+    if (isNotificationsEnabled && Notification.permission === 'granted') {
+      const today = new Date();
+      const dateKey = `${today.getFullYear()}-${today.getMonth() + 1}-${today.getDate()}`;
+      const note = calendarNotes[dateKey];
+      
+      if (note) {
+        const lastNotified = localStorage.getItem(`notified_${dateKey}`);
+        if (!lastNotified) {
+          new Notification(t('calendar_reminder'), {
+            body: note,
+            icon: '/icon-192x192.png'
+          });
+          localStorage.setItem(`notified_${dateKey}`, 'true');
+        }
+      }
+    }
+  }, [isNotificationsEnabled, calendarNotes, t]);
+  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+  const [noteInput, setNoteInput] = useState('');
+
+  const saveNote = () => {
+    if (!selectedDate) return;
+    const dateKey = format(selectedDate, 'yyyy-MM-dd');
+    const newNotes = { ...calendarNotes, [dateKey]: noteInput };
+    setCalendarNotes(newNotes);
+    localStorage.setItem('calendar_notes', JSON.stringify(newNotes));
+    setSelectedDate(null);
+    setNoteInput('');
+    addNotification(t('note_saved') || 'Note saved!');
+  };
 
   // Weather Quest States
   const [apiError, setApiError] = useState<string | null>(null);
@@ -707,32 +799,19 @@ export default function App() {
     }
 
     try {
-      const response = await axios.post('/api/city-insight', {
-        city,
-        lang: i18n.language
-      });
-      
-      const data = response.data;
+      const data = await generateCityInsight(city, i18n.language);
       
       // Save to cache
       localStorage.setItem(cacheKey, JSON.stringify({ ...data, _timestamp: Date.now() }));
       setInsight(data as any);
     } catch (err: any) {
       console.error("Insight error:", err);
-      const errorMsg = err.response?.data?.error || err.message;
+      const errorMsg = err.message || "Failed to fetch insights";
       
-      // Silence 404s as they are expected on static hosts like Netlify without proxy config
-      if (err.response?.status === 404) {
-        console.warn("API route not found (404). This is expected on static hosts.");
-        return;
-      }
-
       if (errorMsg?.includes("quota") || errorMsg?.includes("RESOURCE_EXHAUSTED")) {
         setApiError("Gemini API quota exceeded. Please try again in a minute.");
       } else {
-        // Only show error for non-404 issues if they are critical, 
-        // but for insights we can just be silent and use fallback UI
-        console.error(`Failed to fetch city insights: ${errorMsg}`);
+        setApiError(errorMsg);
       }
     } finally {
       setLoading(false);
@@ -849,7 +928,6 @@ export default function App() {
     }
   };
 
-  const [isPWA, setIsPWA] = useState(false);
   const [showAdminLink, setShowAdminLink] = useState(false);
   const [versionClicks, setVersionClicks] = useState(0);
 
@@ -1244,7 +1322,44 @@ export default function App() {
           </div>
         </div>
 
-        <AnimatePresence mode="wait">
+        {/* Initial Loading Screen */}
+      <AnimatePresence>
+        {isInitialLoading && (
+          <motion.div
+            initial={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] bg-slate-900 flex flex-col items-center justify-center p-6 overflow-hidden"
+            style={{ height: '100dvh', width: '100vw' }}
+          >
+            <motion.div
+              initial={{ scale: 0.8, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              className="w-24 h-24 bg-indigo-600 rounded-[32px] flex items-center justify-center mb-12 shadow-2xl shadow-indigo-500/20"
+            >
+              <Cloud className="w-12 h-12 text-white animate-pulse" />
+            </motion.div>
+            
+            <div className="w-full max-w-xs space-y-4">
+              <div className="flex justify-between items-end mb-2">
+                <span className="text-indigo-400 font-black text-sm tracking-widest uppercase">WSA Loading...</span>
+                <span className="text-white font-black text-2xl">{Math.round(loadingProgress)}%</span>
+              </div>
+              <div className="h-2 w-full bg-slate-800 rounded-full overflow-hidden">
+                <motion.div 
+                  className="h-full bg-indigo-500"
+                  initial={{ width: 0 }}
+                  animate={{ width: `${loadingProgress}%` }}
+                />
+              </div>
+              <p className="text-slate-500 text-center text-xs font-bold uppercase tracking-tighter animate-pulse">
+                Optimizing network traffic & loading assets
+              </p>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence mode="wait">
           <motion.div
             key={activeTab}
             initial={{ opacity: 0, y: 10 }}
@@ -1419,7 +1534,30 @@ export default function App() {
                   )}
                 </div>
 
-                    {/* 5-Day Forecast */}
+                    {/* City Insight Card */}
+                <div className={cn(
+                  "p-8 rounded-3xl border transition-all flex flex-col justify-between",
+                  isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200 shadow-sm"
+                )}>
+                  <div>
+                    <p className="text-slate-400 font-bold text-xs uppercase tracking-widest mb-4">{t('ai_weather_insight')}</p>
+                    <div className="flex items-center gap-4">
+                      <div className="w-12 h-12 bg-indigo-100 dark:bg-indigo-900/30 rounded-2xl flex items-center justify-center">
+                        <Sparkles className="w-6 h-6 text-indigo-600" />
+                      </div>
+                      <div>
+                        <p className={cn("text-sm font-medium leading-relaxed", isDarkMode ? "text-slate-300" : "text-slate-600")}>
+                          {aiFact || t('ai_generating')}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-6 pt-6 border-t border-slate-100 dark:border-slate-800">
+                    <p className="text-slate-400 text-[10px] font-bold uppercase tracking-tighter">{t('real_time_updates')}</p>
+                  </div>
+                </div>
+
+                {/* 5-Day Forecast */}
                     <div className={cn(
                       "md:col-span-2 lg:col-span-2 p-8 rounded-3xl shadow-sm border transition-all",
                       isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"
@@ -1452,33 +1590,101 @@ export default function App() {
                       isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"
                     )}>
                       <div className="flex justify-between items-center mb-6">
-                        <p className="text-slate-400 font-bold text-xs uppercase tracking-widest">{t('calendar')}</p>
-                        <Clock className="w-4 h-4 text-slate-400" />
+                        <div className="flex flex-col">
+                          <p className="text-slate-400 font-bold text-xs uppercase tracking-widest">{t('calendar')}</p>
+                          <h4 className={cn("text-lg font-black", isDarkMode ? "text-white" : "text-slate-900")}>
+                            {t(format(currentTime, 'MMM').toLowerCase())} {currentTime.getFullYear()}
+                          </h4>
+                        </div>
+                        <CalendarIcon className="w-5 h-5 text-indigo-600" />
                       </div>
-                      <div className="grid grid-cols-7 gap-1 text-center">
+                      <div className="grid grid-cols-7 gap-1 text-center mb-4">
                         {['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'].map(d => (
                           <div key={d} className="text-[10px] font-black text-slate-400 uppercase">{t(d).slice(0, 3)}</div>
                         ))}
-                        {Array.from({ length: 31 }).map((_, i) => {
-                          const day = i + 1;
-                          const isToday = day === currentTime.getDate();
-                          return (
-                            <div 
-                              key={i} 
-                              className={cn(
-                                "aspect-square flex items-center justify-center text-xs font-bold rounded-lg transition-all",
-                                isToday 
-                                  ? "bg-indigo-600 text-white" 
-                                  : isDarkMode 
-                                    ? "hover:bg-slate-800 text-slate-400" 
-                                    : "hover:bg-slate-100 text-slate-600"
-                              )}
-                            >
-                              {day}
-                            </div>
-                          );
-                        })}
+                        {(() => {
+                          const start = startOfMonth(currentTime);
+                          const end = endOfMonth(currentTime);
+                          const days = eachDayOfInterval({ start, end });
+                          const padding = Array.from({ length: start.getDay() });
+                          
+                          return [
+                            ...padding.map((_, i) => <div key={`pad-${i}`} />),
+                            ...days.map((date, i) => {
+                              const isToday = format(date, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd');
+                              const dateKey = format(date, 'yyyy-MM-dd');
+                              const hasNote = !!calendarNotes[dateKey];
+                              
+                              return (
+                                <button 
+                                  key={i} 
+                                  onClick={() => {
+                                    setSelectedDate(date);
+                                    setNoteInput(calendarNotes[dateKey] || '');
+                                  }}
+                                  className={cn(
+                                    "aspect-square flex flex-col items-center justify-center text-xs font-bold rounded-lg transition-all relative group",
+                                    isToday 
+                                      ? "bg-indigo-600 text-white shadow-lg shadow-indigo-500/30" 
+                                      : isDarkMode 
+                                        ? "hover:bg-slate-800 text-slate-400" 
+                                        : "hover:bg-slate-100 text-slate-600"
+                                  )}
+                                >
+                                  {date.getDate()}
+                                  {hasNote && (
+                                    <div className="absolute bottom-1 w-1 h-1 bg-amber-500 rounded-full" />
+                                  )}
+                                  {hasNote && (
+                                    <div className={cn(
+                                      "absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-32 p-2 rounded-lg text-[10px] font-medium opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 shadow-xl",
+                                      isDarkMode ? "bg-slate-800 text-slate-200 border border-slate-700" : "bg-white text-slate-600 border border-slate-100"
+                                    )}>
+                                      {calendarNotes[dateKey]}
+                                    </div>
+                                  )}
+                                </button>
+                              );
+                            })
+                          ];
+                        })()}
                       </div>
+                      
+                      {selectedDate && (
+                        <motion.div 
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          className={cn(
+                            "mt-4 p-4 rounded-2xl border",
+                            isDarkMode ? "bg-slate-800 border-slate-700" : "bg-slate-50 border-slate-200"
+                          )}
+                        >
+                          <p className="text-[10px] font-bold text-slate-400 uppercase mb-2">{format(selectedDate, 'dd MMMM yyyy')}</p>
+                          <textarea 
+                            value={noteInput}
+                            onChange={(e) => setNoteInput(e.target.value)}
+                            placeholder={t('write_note') || "Write a note..."}
+                            className={cn(
+                              "w-full bg-transparent border-none focus:ring-0 text-sm resize-none h-20",
+                              isDarkMode ? "text-white placeholder-slate-600" : "text-slate-900 placeholder-slate-400"
+                            )}
+                          />
+                          <div className="flex justify-end gap-2 mt-2">
+                            <button 
+                              onClick={() => setSelectedDate(null)}
+                              className="px-3 py-1 text-[10px] font-bold text-slate-400 hover:text-slate-300"
+                            >
+                              {t('cancel') || "Cancel"}
+                            </button>
+                            <button 
+                              onClick={saveNote}
+                              className="px-3 py-1 bg-indigo-600 text-white text-[10px] font-bold rounded-lg hover:bg-indigo-500"
+                            >
+                              {t('save') || "Save"}
+                            </button>
+                          </div>
+                        </motion.div>
+                      )}
                     </div>
 
                 {/* Weather Chart */}
@@ -1526,13 +1732,13 @@ export default function App() {
                     "lg:col-span-2 p-10 rounded-[40px] border shadow-sm",
                     isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"
                   )}>
-                    <div className="flex items-center gap-4 mb-8">
-                      <div className="w-12 h-12 bg-indigo-600 rounded-2xl flex items-center justify-center text-white">
-                        <BarChart3 className="w-6 h-6" />
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 mb-8">
+                      <div className="w-14 h-14 bg-gradient-to-br from-indigo-600 to-violet-600 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-indigo-500/20">
+                        <TrendingUp className="w-7 h-7" />
                       </div>
                       <div>
-                        <h2 className={cn("text-2xl font-black", isDarkMode ? "text-white" : "text-slate-900")}>{t('market_insights')}</h2>
-                        <p className="text-slate-500 font-medium">{t('market_insight_desc')}</p>
+                        <h2 className={cn("text-2xl sm:text-3xl font-black tracking-tight", isDarkMode ? "text-white" : "text-slate-900")}>{t('market_insights')}</h2>
+                        <p className="text-slate-500 font-medium text-sm sm:text-base">{t('market_insight_desc')}</p>
                       </div>
                     </div>
                     
@@ -1584,80 +1790,110 @@ export default function App() {
 
             {/* AI Travel Planner View */}
             {activeTab === 'planner' && (
-              <div className="max-w-4xl mx-auto">
-                <div className={cn(
-                  "p-10 rounded-[40px] border shadow-sm mb-8",
-                  isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"
-                )}>
-                  <div className="flex items-center gap-4 mb-10">
-                    <div className="w-12 h-12 bg-indigo-600 rounded-2xl flex items-center justify-center text-white">
-                      <Compass className="w-6 h-6" />
-                    </div>
-                    <div>
-                      <h2 className={cn("text-2xl font-black", isDarkMode ? "text-white" : "text-slate-900")}>{t('ai_planner')}</h2>
-                      <p className="text-slate-500 font-medium">AI-powered travel itinerary generator</p>
-                    </div>
+              <div className="max-w-2xl mx-auto py-20 text-center">
+                <motion.div
+                  animate={{ 
+                    y: [0, -20, 0],
+                    rotate: [0, 5, -5, 0]
+                  }}
+                  transition={{ 
+                    duration: 4,
+                    repeat: Infinity,
+                    ease: "easeInOut"
+                  }}
+                  className="inline-block mb-12"
+                >
+                  <div className="w-32 h-32 bg-indigo-600 rounded-[40px] flex items-center justify-center text-white shadow-2xl shadow-indigo-500/40">
+                    <Rocket className="w-16 h-16" />
                   </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-                    <div>
-                      <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">{t('travel_destination')}</label>
-                      <input 
-                        type="text"
-                        value={plannerData.destination}
-                        onChange={(e) => setPlannerData({...plannerData, destination: e.target.value})}
-                        placeholder={t('travel_destination')}
-                        className={cn(
-                          "w-full p-4 rounded-2xl border focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all",
-                          isDarkMode ? "bg-slate-800 border-slate-700 text-white" : "bg-slate-50 border-slate-200 text-slate-900"
-                        )}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">{t('travel_duration')}</label>
-                      <input 
-                        type="number"
-                        value={plannerData.days}
-                        onChange={(e) => setPlannerData({...plannerData, days: parseInt(e.target.value)})}
-                        placeholder={t('travel_duration')}
-                        className={cn(
-                          "w-full p-4 rounded-2xl border focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all",
-                          isDarkMode ? "bg-slate-800 border-slate-700 text-white" : "bg-slate-50 border-slate-200 text-slate-900"
-                        )}
-                      />
-                    </div>
-                  </div>
-
-                  <button 
-                    onClick={() => {
-                      setIsAiLoading(true);
-                      generateTravelPlan(plannerData.destination, plannerData.days, i18n.language)
-                        .then(setTravelPlan)
-                        .finally(() => setIsAiLoading(false));
-                    }}
-                    disabled={!plannerData.destination || isAiLoading}
-                    className={cn(
-                      "w-full py-5 bg-indigo-600 text-white rounded-2xl font-black text-lg hover:bg-indigo-700 transition-all disabled:opacity-50 flex items-center justify-center gap-3",
-                      isDarkMode ? "" : "shadow-xl shadow-indigo-500/20"
-                    )}
-                  >
-                    {isAiLoading ? <Loader2 className="animate-spin" /> : <Sparkles className="w-6 h-6" />}
-                    {t('generate_plan')}
-                  </button>
+                </motion.div>
+                <h2 className={cn("text-5xl font-black mb-6", isDarkMode ? "text-white" : "text-slate-900")}>Coming Soon</h2>
+                <p className="text-slate-500 text-xl font-medium mb-12 max-w-md mx-auto">
+                  Our AI Travel Planner is currently being upgraded to provide even better itineraries. Stay tuned!
+                </p>
+                <div className="flex justify-center gap-4">
+                  <div className="h-1 w-12 bg-indigo-600 rounded-full" />
+                  <div className="h-1 w-4 bg-slate-300 rounded-full" />
+                  <div className="h-1 w-4 bg-slate-300 rounded-full" />
                 </div>
 
-                {travelPlan && (
-                  <motion.div 
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className={cn(
-                      "p-10 rounded-[40px] border shadow-sm leading-relaxed",
-                      isDarkMode ? "bg-slate-900 border-slate-800 text-slate-300" : "bg-white border-slate-200 text-slate-700"
-                    )}
-                  >
-                    <Markdown>{travelPlan}</Markdown>
-                  </motion.div>
-                )}
+                {/* Original code commented out for future use
+                <div className="max-w-4xl mx-auto">
+                  <div className={cn(
+                    "p-10 rounded-[40px] border shadow-sm mb-8",
+                    isDarkMode ? "bg-slate-900 border-slate-800" : "bg-white border-slate-200"
+                  )}>
+                    <div className="flex items-center gap-4 mb-10">
+                      <div className="w-12 h-12 bg-indigo-600 rounded-2xl flex items-center justify-center text-white">
+                        <Compass className="w-6 h-6" />
+                      </div>
+                      <div>
+                        <h2 className={cn("text-2xl font-black", isDarkMode ? "text-white" : "text-slate-900")}>{t('ai_planner')}</h2>
+                        <p className="text-slate-500 font-medium">AI-powered travel itinerary generator</p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                      <div>
+                        <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">{t('travel_destination')}</label>
+                        <input 
+                          type="text"
+                          value={plannerData.destination}
+                          onChange={(e) => setPlannerData({...plannerData, destination: e.target.value})}
+                          placeholder={t('travel_destination')}
+                          className={cn(
+                            "w-full p-4 rounded-2xl border focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all",
+                            isDarkMode ? "bg-slate-800 border-slate-700 text-white" : "bg-slate-50 border-slate-200 text-slate-900"
+                          )}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">{t('travel_duration')}</label>
+                        <input 
+                          type="number"
+                          value={plannerData.days}
+                          onChange={(e) => setPlannerData({...plannerData, days: parseInt(e.target.value)})}
+                          placeholder={t('travel_duration')}
+                          className={cn(
+                            "w-full p-4 rounded-2xl border focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all",
+                            isDarkMode ? "bg-slate-800 border-slate-700 text-white" : "bg-slate-50 border-slate-200 text-slate-900"
+                          )}
+                        />
+                      </div>
+                    </div>
+
+                    <button 
+                      onClick={() => {
+                        setIsAiLoading(true);
+                        generateTravelPlan(plannerData.destination, plannerData.days, i18n.language)
+                          .then(setTravelPlan)
+                          .finally(() => setIsAiLoading(false));
+                      }}
+                      disabled={!plannerData.destination || isAiLoading}
+                      className={cn(
+                        "w-full py-5 bg-indigo-600 text-white rounded-2xl font-black text-lg hover:bg-indigo-700 transition-all disabled:opacity-50 flex items-center justify-center gap-3",
+                        isDarkMode ? "" : "shadow-xl shadow-indigo-500/20"
+                      )}
+                    >
+                      {isAiLoading ? <Loader2 className="animate-spin" /> : <Sparkles className="w-6 h-6" />}
+                      {t('generate_plan')}
+                    </button>
+                  </div>
+
+                  {travelPlan && (
+                    <motion.div 
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className={cn(
+                        "p-10 rounded-[40px] border shadow-sm leading-relaxed",
+                        isDarkMode ? "bg-slate-900 border-slate-800 text-slate-300" : "bg-white border-slate-200 text-slate-700"
+                      )}
+                    >
+                      <Markdown>{travelPlan}</Markdown>
+                    </motion.div>
+                  )}
+                </div>
+                */}
               </div>
             )}
 
@@ -2253,6 +2489,26 @@ export default function App() {
                       </button>
                     </div>
 
+                    <div className="flex items-center justify-between p-6 bg-slate-50 dark:bg-slate-900/50 border border-transparent dark:border-slate-800 rounded-3xl">
+                      <div className="flex-1 pr-4">
+                        <h4 className="font-bold text-lg">{t('calendar_reminder')}</h4>
+                        <p className="text-sm text-slate-500">{t('calendar_reminder_desc')}</p>
+                      </div>
+                      <div className="w-12 h-12 bg-indigo-100 dark:bg-indigo-900/30 rounded-2xl flex items-center justify-center">
+                        <CalendarIcon className="w-6 h-6 text-indigo-600" />
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between p-6 bg-slate-50 dark:bg-slate-900/50 border border-transparent dark:border-slate-800 rounded-3xl">
+                      <div className="flex-1 pr-4">
+                        <h4 className="font-bold text-lg">{t('weather_alerts')}</h4>
+                        <p className="text-sm text-slate-500">{t('weather_alerts_desc')}</p>
+                      </div>
+                      <div className="w-12 h-12 bg-amber-100 dark:bg-amber-900/30 rounded-2xl flex items-center justify-center">
+                        <CloudRain className="w-6 h-6 text-amber-600" />
+                      </div>
+                    </div>
+
                     <div className="grid grid-cols-1 gap-4">
                       <div className={cn("p-6 rounded-3xl border-2 border-dashed flex flex-col items-center text-center gap-4", isDarkMode ? "border-slate-800 bg-slate-900/50" : "border-slate-100 bg-slate-50/50")}>
                         <ShieldCheck className="w-10 h-10 text-emerald-500" />
@@ -2344,10 +2600,10 @@ export default function App() {
                     isDarkMode ? "bg-slate-900 border-slate-800 hover:border-indigo-500/50" : "bg-white border-slate-200 hover:border-indigo-300 shadow-sm"
                   )}>
                     <div className="w-16 h-16 bg-indigo-50 dark:bg-indigo-900/20 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
-                      <Send className="w-8 h-8 text-indigo-600" />
+                      <Globe className="w-8 h-8 text-indigo-600" />
                     </div>
-                    <h4 className={cn("text-2xl font-black mb-4", isDarkMode ? "text-white" : "text-slate-900")}>{t('upcoming_update_1_title')}</h4>
-                    <p className="text-slate-500 leading-relaxed font-medium">{t('upcoming_update_1_desc')}</p>
+                    <h4 className={cn("text-2xl font-black mb-4", isDarkMode ? "text-white" : "text-slate-900")}>{t('upcoming_update_3_title')}</h4>
+                    <p className="text-slate-500 leading-relaxed font-medium">{t('upcoming_update_3_desc')}</p>
                     <div className="mt-8 flex items-center gap-2 text-slate-400 font-bold">
                       <Clock className="w-4 h-4" />
                       Coming Soon
@@ -2401,8 +2657,7 @@ export default function App() {
                     {t('info_page')}
                   </h2>
 
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
-                    {/* Left: Steps */}
+                  <div className="grid grid-cols-1 gap-12 items-center">
                     <div className="space-y-8">
                       <div className="flex gap-6">
                         <div className="w-10 h-10 shrink-0 bg-indigo-600 rounded-xl flex items-center justify-center text-white font-bold">1</div>
@@ -2413,53 +2668,12 @@ export default function App() {
                       </div>
 
                       <div className="flex gap-6">
-                        <div className="w-10 h-10 shrink-0 bg-indigo-600 rounded-xl flex items-center justify-center text-white font-bold">2</div>
+                        <div className="w-10 h-10 shrink-0 bg-emerald-600 rounded-xl flex items-center justify-center text-white font-bold">2</div>
                         <div>
-                          <h4 className={cn("text-lg font-bold mb-2", isDarkMode ? "text-white" : "text-slate-900")}>{t('download_apk')}</h4>
-                          <p className="text-slate-500 font-medium leading-relaxed">{t('apk_desc')}</p>
+                          <h4 className={cn("text-lg font-bold mb-2", isDarkMode ? "text-white" : "text-slate-900")}>{t('reliability_title')}</h4>
+                          <p className="text-slate-500 font-medium leading-relaxed">{t('reliability_desc')}</p>
                         </div>
                       </div>
-
-                      <div className="flex gap-6">
-                        <div className="w-10 h-10 shrink-0 bg-indigo-600 rounded-xl flex items-center justify-center text-white font-bold">3</div>
-                        <div>
-                          <h4 className={cn("text-lg font-bold mb-2", isDarkMode ? "text-white" : "text-slate-900")}>{t('install_steps')}</h4>
-                          <p className="text-slate-500 font-medium leading-relaxed">{t('install_hint')}</p>
-                        </div>
-                      </div>
-
-                      <div className="flex gap-6">
-                        <div className="w-10 h-10 shrink-0 bg-emerald-600 rounded-xl flex items-center justify-center text-white font-bold">4</div>
-                        <div>
-                          <h4 className={cn("text-lg font-bold mb-2", isDarkMode ? "text-white" : "text-slate-900")}>{t('notifications')}</h4>
-                          <p className="text-slate-500 font-medium leading-relaxed">{t('notification_instruction')}</p>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Right: Card */}
-                    <div className={cn(
-                      "p-10 rounded-[32px] text-center border transition-all",
-                      isDarkMode ? "bg-slate-800/50 border-slate-700" : "bg-slate-50 border-slate-100"
-                    )}>
-                      <div className="w-20 h-20 bg-white dark:bg-slate-700 rounded-3xl shadow-sm flex items-center justify-center mx-auto mb-8 rotate-12 group-hover:rotate-0 transition-transform">
-                        <Rocket className="w-10 h-10 text-indigo-600" />
-                      </div>
-                      <h3 className={cn("text-2xl font-black mb-3", isDarkMode ? "text-white" : "text-slate-900")}>
-                        {t('android_app_version')}
-                      </h3>
-                      <p className="text-slate-500 font-medium mb-10 max-w-xs mx-auto">
-                        {t('android_app_subtitle')}
-                      </p>
-                      <a 
-                        href="https://wsa-installer.vercel.app/" 
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-3 px-8 py-4 bg-indigo-600 text-white rounded-2xl font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200 dark:shadow-none"
-                      >
-                        <Download className="w-5 h-5" />
-                        {t('download_apk')}
-                      </a>
                     </div>
                   </div>
                 </div>
@@ -2776,7 +2990,7 @@ export default function App() {
               onClick={handleVersionClick}
               className="text-slate-500 text-[10px] md:text-xs font-bold uppercase tracking-widest hover:text-indigo-600 transition-colors"
             >
-              {t('footer_text')}
+              © {new Date().getFullYear()} WSA v3.9.1. {t('all_rights_reserved')}
             </button>
             <div className="flex gap-4">
               <a 
