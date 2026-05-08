@@ -2994,7 +2994,7 @@ export default function App() {
             </button>
             <div className="flex gap-4">
               <a 
-                href="https://t.me/morv1uss" 
+                href="https://t.me/morvizxc" 
                 target="_blank" 
                 rel="noopener noreferrer"
                 className="text-[10px] md:text-xs font-bold text-indigo-600 hover:text-indigo-500 cursor-pointer transition-colors"
